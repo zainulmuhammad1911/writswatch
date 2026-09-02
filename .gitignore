@@ -53,3 +53,7 @@ next-env.d.ts
 
 # Prisma generated client
 src/generated/
+
+# Lighthouse reports, written into the project root by `npx lighthouse --view`
+*.report.html
+*.report.json

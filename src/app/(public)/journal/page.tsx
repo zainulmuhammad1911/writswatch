@@ -139,8 +139,13 @@ export default async function JournalPage() {
                 <p className="measure mt-6 text-body text-slate">
                   {featuredArticle.excerpt}
                 </p>
+                {/* Same problem as the homepage's About button: a standalone
+                    "Read Story" link has no context of its own. The story
+                    cards below are fine — there the whole card is the link,
+                    so its name is the title and excerpt. */}
                 <AnimatedLinkButton
                   href={`/journal/${featuredArticle.slug}`}
+                  aria-label={`Read Story: ${featuredArticle.title}`}
                   className="mt-10"
                 >
                   Read Story

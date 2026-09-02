@@ -139,7 +139,18 @@ export default async function HomePage() {
                 </p>
               ))}
             </div>
-            <AnimatedLinkButton href={about.ctaHref} className="mt-10">
+            {/* "More Information" says nothing to somebody tabbing through
+                links with the page read aloud, and Lighthouse flags it.
+                The accessible name adds the destination and still contains
+                the visible label, which WCAG 2.5.3 requires so a voice
+                command matching what is on screen still works. Both halves
+                come from the same content section, so an editor who renames
+                the button keeps a coherent name. */}
+            <AnimatedLinkButton
+              href={about.ctaHref}
+              aria-label={`${about.ctaLabel} — ${about.label}`}
+              className="mt-10"
+            >
               {about.ctaLabel}
               <ArrowRight aria-hidden="true" className="size-4" />
             </AnimatedLinkButton>
