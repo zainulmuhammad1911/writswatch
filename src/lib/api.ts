@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { Prisma } from "@/generated/prisma/client";
 
 /** Every endpoint answers in this shape, success or failure. */
 export interface ApiResponse<T> {
@@ -67,18 +66,15 @@ export function handler<Args extends unknown[]>(
       if (error instanceof ApiError) {
         return fail(error.message, error.status);
       }
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === "P2002") {
-          const target = error.meta?.target;
-          const field = Array.isArray(target) ? target.join(", ") : "value";
-          return fail(`That ${field} is already taken`, 409);
-        }
-        if (error.code === "P2025") {
-          return fail("Not found", 404);
-        }
-        if (error.code === "P2003") {
-          return fail("Referenced record does not exist", 409);
-        }
+      const prismaCode = prismaErrorCode(error);
+      if (prismaCode === "P2002") {
+        return fail(`That ${uniqueFieldOf(error)} is already taken`, 409);
+      }
+      if (prismaCode === "P2025") {
+        return fail("Not found", 404);
+      }
+      if (prismaCode === "P2003") {
+        return fail("Referenced record does not exist", 409);
       }
       if (
         error instanceof Error &&
@@ -90,6 +86,58 @@ export function handler<Args extends unknown[]>(
       return fail("Something went wrong", 500);
     }
   };
+}
+
+/**
+ * Prisma's error code, or null.
+ *
+ * Matched by shape rather than `instanceof`. The generated client lives at
+ * src/generated/prisma and constructs its errors inside its own runtime
+ * bundle, so an `instanceof Prisma.PrismaClientKnownRequestError` check
+ * against the imported class silently returns false and every unique-key
+ * violation reports as a 500. The `Pxxxx` codes are part of Prisma's public
+ * contract, so reading them is both stabler and version-proof.
+ */
+function prismaErrorCode(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && /^P\d{4}$/.test(code) ? code : null;
+}
+
+/**
+ * The column named in a P2002, for a message worth reading.
+ *
+ * Two shapes to cover. Prisma's own engine reports `meta.target`; the pg
+ * driver adapter used here reports nothing there and instead nests the
+ * constraint name under meta.driverAdapterError.cause.constraint.index, e.g.
+ * "Timepiece_slug_key".
+ */
+function uniqueFieldOf(error: unknown): string {
+  const meta = (error as { meta?: Record<string, unknown> }).meta;
+  if (!meta) return "value";
+
+  const target = meta.target;
+  if (Array.isArray(target)) return target.join(", ");
+  if (typeof target === "string") return constraintToField(target);
+
+  const cause = (
+    meta.driverAdapterError as { cause?: { constraint?: Record<string, unknown> } }
+  )?.cause;
+  const constraint = cause?.constraint;
+  if (constraint) {
+    const fields = constraint.fields;
+    if (Array.isArray(fields)) return fields.join(", ");
+    if (typeof constraint.index === "string") {
+      return constraintToField(constraint.index);
+    }
+  }
+  return "value";
+}
+
+/** "Timepiece_slug_key" -> "slug". Anything unexpected passes through. */
+function constraintToField(constraint: string): string {
+  const match = constraint.match(/^[A-Za-z]+_(.+)_key$/);
+  return match ? match[1] : constraint;
 }
 
 /**

@@ -24,46 +24,39 @@ design-system reference sheet; the real Homepage replaces it in Fase 3.
 | Icons | Lucide React |
 | Fonts | Newsreader + Geist via `next/font/google` |
 
-## Setting up the database
+## The database
 
-**Nothing is provisioned yet.** No PostgreSQL is installed on this machine and
-the Docker daemon is not running, so `prisma migrate dev` has never been run
-against a real database. Until it is, the site serves the static fixtures and
-every `/api/*` route answers 503.
+PostgreSQL 17 runs in Docker as the container `iwm-db`. Docker Desktop is
+installed at `/Applications/Docker.app`; the `docker` command is a symlink into
+it, so the CLI works only while the app is running.
 
-Pick one of these, then run the three commands below.
+```bash
+open -a Docker && docker start iwm-db
+```
+
+That is the whole daily routine. The container keeps its data between restarts.
+
+If it ever needs recreating from scratch:
 
 ```bash
 docker run --name iwm-db -e POSTGRES_USER=iwm -e POSTGRES_PASSWORD=iwm -e POSTGRES_DB=iwm -p 5432:5432 -d postgres:17
 ```
 
-Or install it natively:
+Then `npm run db:migrate && npm run db:seed`.
 
-```bash
-brew install postgresql@17 && brew services start postgresql@17 && createdb iwm
-```
+| Script | Does |
+|---|---|
+| `npm run db:migrate` | apply schema changes |
+| `npm run db:seed` | load the fixtures, idempotent |
+| `npm run db:studio` | browse the data in a GUI |
+| `npm run db:reset` | drop everything and re-migrate |
+| `npm run db:generate` | regenerate the client after a schema edit |
 
-Or paste a hosted connection string (Supabase, Neon, Railway) into `.env`.
+The seed prints a generated admin password once, on first run only. Override it
+with `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
 
-Then set `DATABASE_URL` in `.env` and:
-
-```bash
-npm run db:migrate
-```
-
-```bash
-npm run db:seed
-```
-
-```bash
-npm run dev
-```
-
-The seed prints a generated admin password once. Save it: only the bcrypt hash
-is stored. Override it with `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` if you
-would rather choose.
-
-`npm run db:studio` opens Prisma Studio to browse the data.
+`.env` holds `DATABASE_URL` and `ADMIN_API_KEY` and is gitignored. `.env.example`
+documents both.
 
 ### Prisma 7, not the PRD's schema block
 
