@@ -755,6 +755,84 @@ with non-zero area — `{0, 1, 2, n-2, n-1, round(n/2)}` — and index 7 alone g
 the preload it emits, and a `rel=preload as=image` without it is queued at Low
 priority, so marking all six would only have put them back in a tie.
 
+### Lighthouse
+
+Run against a production build (`next build && next start`), desktop preset,
+Lighthouse 13.4.1:
+
+| Category | Score |
+|---|---|
+| Performance | 99 |
+| Accessibility | 100 |
+| Best Practices | 100 |
+| SEO | 100 |
+
+FCP 0.3s, LCP 0.8s, TBT 0ms, CLS 0, Speed Index 0.5s. Total 987 KB over 59
+requests.
+
+The first run scored **Performance 92, SEO 92** and had two real findings.
+
+- `lcp-discovery-insight` scored 0 — see "Which six, and why it is not the
+  front four" above. LCP was 1.8s; it is now 0.8s.
+- `link-text` flagged the homepage's "MORE INFORMATION" button. That audit
+  reads the **visible** text, not the accessible name, so the `aria-label`
+  added for screen readers did nothing for it. The label is now "About the
+  collection": it names its destination, differs from the section eyebrow
+  above it, and the `aria-label` is gone, since a descriptive label is its own
+  accessible name and a duplicate that does not match the visible text is
+  what WCAG 2.5.3 warns about.
+
+Both runs of the audit were done by hand and need a Chromium browser, which
+this machine does not have. To repeat them:
+
+```bash
+npm run build && npm run start
+```
+
+```bash
+npx -y lighthouse http://localhost:3000 --view --preset=desktop
+```
+
+What is left is four items that together move the score by nothing and are
+not worth the complexity: 13 KB of render-blocking CSS (50ms, and FCP already
+scores 1), 47 KB of unused JavaScript inside React and framer-motion, 14 KB of
+`Array.prototype.at`-era polyfills in a framework chunk, and a
+network-dependency-tree insight that scores 0 for any chain at all and carries
+no weight.
+
+### Fonts
+
+Lighthouse does not score font weight, and fonts were the largest single
+resource category on the page: **303 KB across three files, more than all 25
+images.** Two of the three were Newsreader.
+
+`next/font` splits Google fonts by `unicode-range` and preloads only the latin
+faces, so the three that actually cross the wire are Newsreader normal (128.8
+KB), Newsreader italic (144.5 KB) and Geist (28.6 KB).
+
+**The italic face was preloaded on all 44 routes and rendered on 4.** Asking
+for `style: ["normal", "italic"]` in one call puts both faces in every
+document head; italics appear only in journal pull quotes. It is now a second
+`Newsreader({ style: ["italic"], preload: false })` instance behind its own
+`--font-display-italic` token, used by the `<blockquote>` in `ArticleBody` and
+nowhere else. Verified: the homepage fetches 2 font files and the italic face
+reports `status: "unloaded"`; the article page fetches it on demand, 144 KB,
+and the quote computes to `Newsreader` italic. That is **144.5 KB off every
+page except the four articles.**
+
+One knob left, and it is a design decision rather than a fix. `axes: ["opsz"]`
+on Newsreader more than doubles the file:
+
+| | Newsreader normal, latin | italic |
+|---|---|---|
+| with `opsz` | 128.8 KB | 144.5 KB |
+| without | 56.8 KB | 63.0 KB |
+
+72 KB for the optical-size axis. It is not decorative — `font-optical-sizing:
+auto` is on by default, so the 58px hero really is drawn with thinner hairlines
+and sharper serifs than a scaled-up 16px cut would be, which is the editorial
+look the brief asked for. It stays until somebody decides the trade is wrong.
+
 ### JavaScript
 
 | Route | Initial JS (gzipped) |
@@ -823,32 +901,6 @@ ring rather than only darkening the border by a pixel.
   375, and `window.scrollX` stays 0 after `scrollTo({left: 500})`.
 
 ### What was not verified, and how to
-
-- **Lighthouse has only been run against `next dev`.** It needs a
-  Chromium-based browser and this machine has only Safari, so the runs were
-  done by hand, against `localhost:3000`. The report's own diagnostics give it
-  away: "Minify JavaScript, est. savings 267 KiB" and "Reduce unused
-  JavaScript, 341 KiB" are both descriptions of a dev bundle. Scores were
-  **Performance 92, Accessibility 100, Best Practices 100, SEO 92**, and the
-  performance figure should read better on a real build. Worth re-running:
-
-  ```bash
-  npm run build && npm run start
-  ```
-
-  ```bash
-  npx -y lighthouse http://localhost:3000 --view --preset=desktop
-  ```
-
-  The two findings that were real, both now fixed: `lcp-discovery-insight`
-  (see "Which six, and why it is not the front four" above) and the SEO
-  `link-text` audit, which flagged the homepage's "MORE INFORMATION" button.
-  That audit reads the **visible** text, not the accessible name, so the
-  `aria-label` that had been added for screen readers did nothing for it. The
-  label is now "About the collection" — it names its destination, differs from
-  the section eyebrow above it, and the `aria-label` is gone, since a
-  descriptive label is its own accessible name and a duplicate that does not
-  match the visible text is what WCAG 2.5.3 warns about.
 
 - **Only the Chromium-based in-app browser was tested.** Firefox, Safari and
   Edge were not. The CSS in the production bundle uses `:has()`, `@property`

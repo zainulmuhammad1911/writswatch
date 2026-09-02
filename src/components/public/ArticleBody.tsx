@@ -69,7 +69,10 @@ export function ArticleBody({ content, className }: ArticleBodyProps) {
               key={i}
               className="measure my-10 border-l-2 border-navy pl-6 lg:-ml-6"
             >
-              <p className="font-display text-h3 leading-[1.35] text-graphite italic">
+              {/* font-display-italic, not font-display: the italic face is a
+                  separate un-preloaded font so the rest of the site does not
+                  download it. See lib/fonts.ts. */}
+              <p className="font-display-italic text-h3 leading-[1.35] text-graphite italic">
                 {block.text}
               </p>
             </blockquote>

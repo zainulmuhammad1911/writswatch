@@ -25,7 +25,7 @@ const twMerge = extendTailwindMerge({
         "danger",
       ],
       text: ["display", "h1", "h2", "h3", "body", "small", "caption", "label"],
-      font: ["display", "sans"],
+      font: ["display", "display-italic", "sans"],
       spacing: [
         "section-sm",
         "section",

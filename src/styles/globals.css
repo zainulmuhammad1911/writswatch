@@ -62,6 +62,11 @@
      ------------------------------------------------------------------------ */
   --font-display: var(--font-newsreader), "Newsreader", ui-serif, Georgia,
     "Times New Roman", serif;
+  /* Italic Newsreader is a separate, un-preloaded face — see lib/fonts.ts.
+     Use it only where text is actually set in italics, or the browser will
+     fetch 144 KB to render upright glyphs it already has. */
+  --font-display-italic: var(--font-newsreader-italic), "Newsreader", ui-serif,
+    Georgia, "Times New Roman", serif;
   --font-sans: var(--font-geist), "Geist", ui-sans-serif, system-ui,
     -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
 
