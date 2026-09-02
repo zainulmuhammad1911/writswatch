@@ -60,11 +60,17 @@ export async function generateMetadata(): Promise<Metadata> {
       follow: true,
       googleBot: { index: true, follow: true, "max-image-preview": "large" },
     },
-    // Both stated, because `icons` is one metadata field and setting it here
-    // replaces the file conventions wholesale — the same field-level override
-    // that silently dropped og:image. Without the apple entry, iOS guesses at
-    // /apple-touch-icon.png and logs a 404 on every page load.
-    icons: { icon: "/favicon.ico", apple: "/apple-icon.png" },
+    // Deliberately no `icons` block. `favicon.ico` and `apple-icon.png` in
+    // this directory are file conventions, and Next emits both links itself
+    // with a content hash on the URL:
+    //
+    //   /favicon.ico?favicon.15ark7ra6zv_2.ico   sizes="64x64"
+    //   /apple-icon.png?apple-icon.3odbt...png   sizes="180x180"
+    //
+    // Stating `icons` here replaced that with the bare paths — the same
+    // field-level override that dropped og:image above. Bare paths still
+    // resolve, but they carry no hash, so a browser that cached the previous
+    // favicon keeps serving it. Leave this out.
   };
 }
 

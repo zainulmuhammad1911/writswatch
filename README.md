@@ -597,13 +597,36 @@ apology in a voice the rest of the site never uses.
 - `getActiveIndex` returns -1 when no nav item matches. It used to fall back
   to Home, which marked a link `aria-current="page"` on the error page and
   told a screen reader the 404 was the homepage.
-- `app/apple-icon.png` (180x180, flattened onto cool-white because iOS
-  composites a transparent touch icon onto black) plus an `apple` entry in the
-  root `icons`. Setting `icons` in `generateMetadata` replaces the file
-  conventions wholesale — the same field-level override that dropped
-  `og:image` — so both have to be stated. Browsers still probe
-  `/apple-touch-icon.png` on their own and get a 404; that request is
-  browser-initiated and harmless, and the link tag is what real iOS uses.
+- **Icons** are both file conventions in `src/app/` and there is no `icons`
+  block in `generateMetadata`. Next emits both links itself, each with a
+  content hash on the URL, which is the point: stating `icons` replaced them
+  with bare paths — the same field-level override that dropped `og:image` —
+  and a bare `/favicon.ico` carries no hash, so a browser that cached the
+  previous icon keeps serving it. `app/apple-icon.png` is 180x180, flattened
+  onto cool-white because iOS composites a transparent touch icon onto black.
+  Browsers still probe `/apple-touch-icon.png` on their own and get a 404;
+  that request is browser-initiated and harmless.
+- **`app/favicon.ico` is generated**, by `scripts/make-favicon.py` (needs
+  `pip install pillow`), from `public/images/favicon-source.png` — the brand
+  mark, byte for byte the same file as `Aset/LOGO/Pavicon.png`, which is why
+  the tracked copy under `public/` matters now that `Aset/` is gitignored.
+  Before this it was still `create-next-app`'s placeholder: a black circle
+  with a white triangle, belonging to no brand at all.
+
+  Three decisions are baked into the script. The mark sits on an opaque
+  cool-white ground, not a transparent one, because `#132155` is close to
+  invisible against a dark tab strip. Each of the four sizes is rendered from
+  the full-resolution crop with its own fill, alpha gamma and unsharp amount,
+  rather than downscaled from one large icon — a straight Lanczos reduction to
+  16px turns the roof line, the dial and the two columns into one grey smudge,
+  since every stroke lands on a fraction of a pixel. And the payloads are BMP,
+  not PNG: Turbopack's image processor cannot read a PNG-payload ICO and fails
+  the build with nothing more specific than "Processing image failed".
+
+  16px is an impression of the mark rather than a reading of it. That is the
+  limit of the canvas for artwork carrying a building, a dial and three
+  columns, and browsers only reach for it on 1x displays. A legible 16px
+  would need a simplified glyph drawn for that size.
 
 ### Why there is only one skeleton
 
