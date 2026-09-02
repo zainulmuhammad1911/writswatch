@@ -1,0 +1,211 @@
+// Indonesia Wristwatch Museum — database schema
+//
+// Copied from the PRD (section 8) with two additions noted inline:
+//   - a client output path, required by Prisma 7
+//   - Article.coverImageAlt, so alt text survives the move off the mock data
+//
+// Regenerate the client after any edit:  npx prisma generate
+// Apply changes to a live database:      npx prisma migrate dev
+
+generator client {
+  provider = "prisma-client-js"
+  // Prisma 7 no longer writes into node_modules by default.
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7 removed `url` from the schema. The connection string now lives in
+  // prisma.config.ts for the CLI, and reaches the client through the pg driver
+  // adapter in src/lib/db.ts. This is the one place the PRD's schema block is
+  // out of date rather than wrong.
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  hashedPassword String
+  role           Role      @default(EDITOR)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sessions       Session[]
+  articles       Article[]
+  auditLogs      AuditLog[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  ipAddress    String?
+  userAgent    String?
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  EDITOR
+}
+
+model Timepiece {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  brand           String
+  model           String
+  referenceNumber String?  @map("reference_number")
+  year            Int?
+  yearEnd         Int?     @map("year_end")
+  movement        String?
+  caseSize        String?  @map("case_size")
+  caseMaterial    String?  @map("case_material")
+  dialColor       String?  @map("dial_color")
+  description     String?  @db.Text
+  story           String?  @db.Text
+  category        String?
+  featured        Boolean  @default(false)
+  published       Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  images          TimepieceImage[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([brand])
+  @@index([year])
+  @@index([category])
+  @@index([featured])
+  @@index([published])
+}
+
+model TimepieceImage {
+  id           String    @id @default(cuid())
+  timepieceId  String    @map("timepiece_id")
+  timepiece    Timepiece @relation(fields: [timepieceId], references: [id], onDelete: Cascade)
+  url          String
+  alt          String?
+  isPrimary    Boolean   @default(false) @map("is_primary")
+  sortOrder    Int       @default(0)
+  width        Int?
+  height       Int?
+  createdAt    DateTime  @default(now())
+
+  @@index([timepieceId])
+}
+
+model Article {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  title       String
+  subtitle    String?
+  excerpt     String?       @db.Text
+  content     String        @db.Text
+  coverImage  String?       @map("cover_image")
+  // Not in the PRD. The mock data carries alt text for every cover and it
+  // would be lost otherwise, which would be a regression in accessibility.
+  coverImageAlt String?     @map("cover_image_alt")
+  category    ArticleCategory @default(STORY)
+  featured    Boolean       @default(false)
+  published   Boolean       @default(false)
+  publishedAt DateTime?     @map("published_at")
+  authorId    String        @map("author_id")
+  author      User          @relation(fields: [authorId], references: [id])
+  tags        ArticleTag[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([category])
+  @@index([featured])
+  @@index([published])
+  @@index([publishedAt])
+}
+
+enum ArticleCategory {
+  STORY
+  ARCHIVE
+  ESSAY
+  NEWS
+}
+
+model Tag {
+  id       String       @id @default(cuid())
+  name     String       @unique
+  slug     String       @unique
+  articles ArticleTag[]
+}
+
+model ArticleTag {
+  articleId String  @map("article_id")
+  tagId     String  @map("tag_id")
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+}
+
+model PageContent {
+  id        String   @id @default(cuid())
+  page      String
+  section   String
+  key       String
+  value     String   @db.Text
+  type      ContentType @default(TEXT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([page, section, key])
+  @@index([page])
+}
+
+enum ContentType {
+  TEXT
+  RICHTEXT
+  IMAGE
+  NUMBER
+  URL
+}
+
+model Media {
+  id          String   @id @default(cuid())
+  filename    String
+  originalName String  @map("original_name")
+  mimeType    String   @map("mime_type")
+  size        Int
+  width       Int?
+  height      Int?
+  url         String
+  alt         String?
+  folder      String?
+  createdAt   DateTime @default(now())
+
+  @@index([folder])
+  @@index([mimeType])
+}
+
+model SiteSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String @db.Text
+  type  String @default("string")
+
+  @@index([key])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entity     String
+  entityId   String?  @map("entity_id")
+  details    String?  @db.Text
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+}
