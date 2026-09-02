@@ -93,6 +93,70 @@ survives the move off the fixtures.
 The generated client lands in `src/generated/prisma` (gitignored) rather than
 `node_modules`, which is also a Prisma 7 default.
 
+## Deploying to Vercel
+
+Connecting the repository to Vercel is not enough on its own. Two things fail
+the build and one feature does not work on the platform at all.
+
+### The build needs the Prisma client, which is not in the repository
+
+`src/generated/` is gitignored, so a fresh clone has no client and the first
+thing that happens is a compile error on every `@/generated/prisma` import.
+Three scripts cover it:
+
+| Script | Runs | Does |
+|---|---|---|
+| `postinstall` | any `npm install` | `prisma generate` |
+| `build` | local builds | `prisma generate && next build` |
+| `vercel-build` | Vercel only, in place of `build` | adds `prisma migrate deploy` |
+
+Migrations sit in `vercel-build` rather than `build` on purpose. A deploy has
+to bring the hosted database up to the schema it was built against; a local
+build should not migrate the developer's database as a side effect.
+
+### The build reads the database
+
+`collection/[slug]` and `journal/[slug]` both use `generateStaticParams`, so
+`next build` queries Postgres for the slugs. With the database unreachable the
+build stops at `Failed to collect page data for /journal/[slug]` — which is
+exactly what happens when the local Docker container is not running. The
+hosted database therefore has to exist, be migrated, and **hold seeded content
+before the first deploy**, or the build has nothing to read.
+
+Run this once from your own machine, with the Supabase URLs live in `.env`:
+
+```bash
+npm run db:migrate && npm run db:seed
+```
+
+### Environment variables
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Supabase pooler, port 6543, `?pgbouncer=true` |
+| `DIRECT_URL` | Supabase session pooler, port 5432 |
+| `AUTH_SECRET` | `openssl rand -base64 48` |
+| `NEXT_PUBLIC_SITE_URL` | the real origin, no trailing slash |
+
+`NEXT_PUBLIC_SITE_URL` carries more than it looks. Every canonical URL,
+`og:image`, sitemap entry and piece of structured data is built from it. Left
+at localhost, the sitemap tells search engines to crawl a machine they cannot
+reach.
+
+NextAuth reads `AUTH_SECRET` from the environment on its own, which is why it
+appears nowhere in the source. Without it, login fails.
+
+### Media upload does not work on Vercel
+
+`api/media/route.ts` writes to `public/uploads` with `mkdir` and `writeFile`.
+Vercel's filesystem is read-only apart from `/tmp`, and `/tmp` does not survive
+the request. Uploads throw, and a file that did land would vanish.
+
+Nothing else is affected: the public site, login, editing copy, and collection
+and journal CRUD all work. Only adding a new image breaks. The fix is Vercel
+Blob or Supabase Storage, and it is contained to that route and its delete
+counterpart.
+
 ## How pages read data
 
 Pages call `lib/queries.ts`, which talks to Prisma directly. They do **not**
