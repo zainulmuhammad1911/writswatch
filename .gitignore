@@ -57,3 +57,13 @@ src/generated/
 # Lighthouse reports, written into the project root by `npx lighthouse --view`
 *.report.html
 *.report.json
+
+# Source material, deliberately not in the repository.
+#
+# Aset/ holds the 54 original collection photographs; the site serves derived
+# copies from public/images/. Brief/ holds the internal PRD and the visual
+# brief. Both were tracked up to the first push and were removed from the whole
+# history with `git filter-branch` before it. They still exist on disk — these
+# entries are what keeps them from being re-added.
+/Aset/
+/Brief/
