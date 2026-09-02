@@ -195,6 +195,58 @@ export const updateSettingsSchema = z.union([
   z.object({ settings: z.array(settingSchema).min(1).max(200) }),
 ]);
 
+/* -------------------------------------------------------------------------- */
+/*  Users                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export const role = z.enum(["SUPER_ADMIN", "ADMIN", "EDITOR"]);
+
+/**
+ * 12 characters minimum rather than 8. This is a staff account with write
+ * access to the whole museum, and bcrypt at cost 12 only buys time against
+ * offline cracking if the password has entropy to begin with.
+ */
+export const password = z
+  .string()
+  .min(12, "Use at least 12 characters")
+  .max(200, "That is longer than 200 characters");
+
+export const createUserSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(200),
+  name: z.string().trim().max(120).optional(),
+  password,
+  role: role.optional(),
+});
+
+export const updateUserSchema = z
+  .object({
+    name: z.string().trim().max(120).nullable().optional(),
+    role: role.optional(),
+    active: z.boolean().optional(),
+    password: password.optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "Send at least one field to update",
+  });
+
+export const userQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  role: role.optional(),
+  active: z.enum(["true", "false", "all"]).optional(),
+});
+
+/* -------------------------------------------------------------------------- */
+/*  Audit log                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export const auditQuerySchema = z.object({
+  userId: z.string().trim().max(40).optional(),
+  action: z.enum(["CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT"]).optional(),
+  entity: z.string().trim().max(60).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+
 export type CreateTimepieceInput = z.infer<typeof createTimepieceSchema>;
 export type UpdateTimepieceInput = z.infer<typeof updateTimepieceSchema>;
 export type CreateArticleInput = z.infer<typeof createArticleSchema>;

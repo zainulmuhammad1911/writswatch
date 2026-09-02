@@ -27,6 +27,10 @@ model User {
   name           String?
   hashedPassword String
   role           Role      @default(EDITOR)
+  // Not in the PRD schema, but its dashboard spec asks for "deactivate".
+  // Soft-disable rather than delete: an account that authored articles or
+  // wrote audit rows cannot be removed without taking that history with it.
+  active         Boolean   @default(true)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   sessions       Session[]

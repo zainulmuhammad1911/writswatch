@@ -30,6 +30,14 @@
   --color-navy-dark: #0d1e2b;   /* Accent hover / pressed                    */
   --color-border-grey: #d9dee2; /* Border — dividers, card edges, inputs     */
 
+  /* Status colours, added for the admin dashboard in Fase 9. The public site
+     uses none of these: a museum page has no success or danger states. Muted
+     on purpose so the CMS still looks like part of the same product, and each
+     one clears 4.5:1 on both cool-white and pure-white. */
+  --color-success: #2f6b4f;
+  --color-warning: #8a5a12;
+  --color-danger: #a32c2c;
+
   /* Contrast, measured (WCAG AA needs 4.5:1 for text under 18.66px):
        graphite on cool-white  16.3:1   graphite on soft-grey  15.1:1
        navy     on cool-white  13.5:1   slate    on pure-white  5.0:1
@@ -187,6 +195,12 @@
 
   p {
     text-wrap: pretty;
+  }
+
+  /* Admin tables are read by scanning down a column, so every number in one
+     needs the same advance width. */
+  table {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Reference numbers, years and stats line up in columns. */

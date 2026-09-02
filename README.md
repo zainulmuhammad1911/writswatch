@@ -111,6 +111,56 @@ fixtures import; no signature changes.
 `lib/fixtures.ts` (the old `lib/data.ts`) now has two jobs: the seed source,
 and that fallback. Pages must not import it directly.
 
+## Admin dashboard (Fase 9)
+
+`/admin`, behind the login. The sidebar is built on the server from the
+signed-in role, so a link a role cannot use is never rendered; every page then
+calls `requirePermission` again, because a hidden link is not a control.
+
+| Page | What it does |
+|---|---|
+| `/admin` | totals, quick actions, ten most recent audit records |
+| `/admin/collection` | table with search and status filter, inline publish/featured toggles |
+| `/admin/collection/new`, `/[id]` | full form: identification, specs, words, photographs, visibility |
+| `/admin/journal` | table with search and status filter |
+| `/admin/journal/new`, `/[id]` | title, auto slug, category, excerpt, body, cover picker, tags, publish date |
+| `/admin/pages` | PageContent rows per page, grouped by section, preview link |
+| `/admin/media` | grid, drag-and-drop upload, folder filter, in-use warning on delete |
+| `/admin/settings` | site details and SEO defaults; Users tab for SUPER_ADMIN |
+| `/admin/audit` | full trail, filterable by action and record type |
+
+Admin pages read Prisma directly, like the public ones. Forms and toggles go
+through `/api` via `lib/api-client.ts`, which is what those routes are for.
+
+### The editor is not a WYSIWYG, deliberately
+
+`RichTextField` is a textarea over the same block syntax `ArticleBody` parses
+(`## ` heading, `> ` quote, blank line between paragraphs), with a live
+preview rendered by the real public component.
+
+A visual editor emits HTML. Rendering editor HTML on the public site would
+mean `dangerouslySetInnerHTML`, a DOMPurify dependency, and keeping
+`unsafe-inline` in the CSP permanently. The trade is a slightly less familiar
+editing surface for a public site with no HTML injection path at all. If a
+WYSIWYG becomes a requirement, all three of those follow.
+
+### Image ordering uses buttons, not just drag
+
+`ImageManager` supports dragging, but the up/down/primary controls are the real
+interface. Drag-and-drop alone is unreachable by keyboard and invisible to a
+screen reader.
+
+### Deactivate, not delete
+
+Users are soft-disabled via `User.active` (added in Fase 9; not in the PRD
+schema, though its dashboard spec asks for "deactivate"). An account that
+authored articles or wrote audit rows cannot be hard-deleted without taking
+that history with it, and the API says so rather than just refusing. Sign-in
+rejects an inactive account the same way it rejects a wrong password.
+
+Three lockouts are refused: changing your own role, deactivating your own
+account, and demoting or disabling the last active super admin.
+
 ## API
 
 Every endpoint answers `{ success, data?, error?, issues? }`.

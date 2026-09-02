@@ -59,6 +59,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         if (!user || !valid) return null;
 
+        // A deactivated account must not be able to sign in, and must fail the
+        // same way as a wrong password so it cannot be probed.
+        if (!user.active) return null;
+
         forgive("login", ip);
 
         return {
