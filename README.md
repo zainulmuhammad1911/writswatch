@@ -52,6 +52,29 @@ Then `npm run db:migrate && npm run db:seed`.
 | `npm run db:reset` | drop everything and re-migrate |
 | `npm run db:generate` | regenerate the client after a schema edit |
 
+### Switching to Supabase
+
+The project is `vldpimlvjxgmwpmikuci` in `ap-northeast-1`. It needs **two**
+connection strings, because the two poolers do different jobs:
+
+| Port | Mode | Used by |
+|---|---|---|
+| 6543 | transaction | the app (`DATABASE_URL`) |
+| 5432 | session | migrations and the seed (`DIRECT_URL`) |
+
+Port 6543 hands out a different backend per statement, so it cannot run a
+migration: the advisory lock Prisma holds for the length of a migration would
+be dropped straight away. `prisma.config.ts` and `prisma/seed.ts` therefore
+read `DIRECT_URL`, falling back to `DATABASE_URL` when it is unset, which is
+why a local Postgres needs only one line.
+
+Both URLs are pre-filled in `.env`, commented out, with `<PASSWORD>` to
+replace. Uncomment them, comment out the local `DATABASE_URL`, then
+`npm run db:migrate && npm run db:seed`.
+
+Direct connections (`db.<ref>.supabase.co:5432`) are not available on this
+project; that hostname does not resolve. Pooler only.
+
 The seed prints a generated admin password once, on first run only. Override it
 with `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
 

@@ -22,10 +22,13 @@ import {
  *   npx prisma db seed
  */
 
-const connectionString = process.env.DATABASE_URL?.trim();
+// The seed writes a few hundred rows in sequence, so it uses the session-mode
+// pooler for the same reason migrations do.
+const connectionString =
+  process.env.DIRECT_URL?.trim() || process.env.DATABASE_URL?.trim();
 if (!connectionString) {
   console.error(
-    "DATABASE_URL is not set. See README, \"Setting up the database\"."
+    "DATABASE_URL is not set. See README, \"The database\"."
   );
   process.exit(1);
 }
