@@ -146,6 +146,33 @@ reach.
 NextAuth reads `AUTH_SECRET` from the environment on its own, which is why it
 appears nowhere in the source. Without it, login fails.
 
+### "Deployment Blocked: the commit author did not have contributing access"
+
+Vercel matches the **email on the commit author** against the emails on your
+Vercel account. On the Hobby plan a private repository accepts deployments
+only from the account owner, so a commit whose author email Vercel does not
+recognise is blocked before the build starts. The dialog offers "Upgrade to
+Pro", which is not the actual fix.
+
+It is easy to walk into. The commits here were originally authored as
+`Zainul <zainul@Zainuls-MacBook-Air.local>` — git had no `user.email` set
+either locally or globally and fell back to the machine's hostname, and no
+such address exists on any Vercel account. Setting a real address does not
+help by itself either: it has to be an address **added and verified** on the
+Vercel account, under `vercel.com/account`.
+
+Two things to know when fixing it:
+
+- **Redeploy does not re-run the check.** Vercel keeps the verdict against
+  that commit, so redeploying the same SHA stays blocked however many times
+  you try. Push a new commit and the evaluation starts clean.
+- **The block is specific to private repositories.** Making the repository
+  public lifts it on Hobby, which is a genuine option here now that `Aset/`
+  and `Brief/` are out of the history — what remains is the source and the
+  photographs under `public/images/`, and the site already serves those
+  publicly. `npx vercel --prod` is the other way out: deploying from the CLI
+  involves no commit, so there is no author to check.
+
 ### Media upload does not work on Vercel
 
 `api/media/route.ts` writes to `public/uploads` with `mkdir` and `writeFile`.
