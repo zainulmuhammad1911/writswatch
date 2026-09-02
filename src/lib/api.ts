@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import type { Role } from "@/generated/prisma/client";
+import { auth } from "@/lib/auth";
+import { actionForMethod, can, ROLE_LABELS, type Resource } from "@/lib/rbac";
+import {
+  hit,
+  rateLimitHeaders,
+  type LimitName,
+  type RateLimitResult,
+} from "@/lib/rate-limit";
 
 /** Every endpoint answers in this shape, success or failure. */
 export interface ApiResponse<T> {
@@ -62,6 +71,12 @@ export function handler<Args extends unknown[]>(
     } catch (error) {
       if (error instanceof ZodError) {
         return fail("Validation failed", 422, zodIssues(error));
+      }
+      if (error instanceof RateLimitError) {
+        return NextResponse.json<ApiResponse<never>>(
+          { success: false, error: "Too many requests" },
+          { status: 429, headers: rateLimitHeaders(error.result) }
+        );
       }
       if (error instanceof ApiError) {
         return fail(error.message, error.status);
@@ -141,40 +156,92 @@ function constraintToField(constraint: string): string {
 }
 
 /**
- * Gate for every write endpoint, and a placeholder for Fase 8.
+ * The signed-in user, or a 401.
  *
- * There is no login yet, so without a check the API would let anyone create,
- * edit and delete museum records. Until NextAuth lands, writes need
- * `Authorization: Bearer $ADMIN_API_KEY`. If the variable is unset the route
- * refuses outright rather than allowing the request, so an unconfigured
- * deployment fails closed.
+ * Middleware already refused unauthenticated requests, so reaching here
+ * without a session means either the matcher missed a path or the route was
+ * called from server code. Either way it is a fault, not a client error, so it
+ * fails closed rather than assuming a role.
  */
-export function requireWriteAccess(request: Request): void {
-  const expected = process.env.ADMIN_API_KEY?.trim();
+export async function requireSession(): Promise<SessionUser> {
+  const session = await auth();
+  if (!session?.user?.id) throw new ApiError("Unauthorized", 401);
+  return { id: session.user.id, role: session.user.role, email: session.user.email ?? null };
+}
 
-  if (!expected) {
+export interface SessionUser {
+  id: string;
+  role: Role;
+  email: string | null;
+}
+
+/**
+ * Session plus permission plus rate limit, which is what every CMS endpoint
+ * needs before it does anything.
+ *
+ * Order matters: identify first, then authorise, then throttle. Rate limiting
+ * before authorising would let an anonymous caller burn another user's budget.
+ */
+export async function guard(
+  request: Request,
+  resource: Resource,
+  options: { limit?: LimitName } = {}
+): Promise<SessionUser> {
+  const user = await requireSession();
+  const action = actionForMethod(request.method);
+
+  if (!can(user.role, resource, action)) {
     throw new ApiError(
-      "Write access is not configured. Set ADMIN_API_KEY to enable it.",
-      503
+      `Your role (${ROLE_LABELS[user.role]}) cannot ${action} ${resource}`,
+      403
     );
   }
 
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  // A cookie-authenticated mutation is a CSRF target. NextAuth's own token
+  // covers its endpoints only, so same-origin is enforced here for everything
+  // that changes state. Sec-Fetch-Site is sent by every current browser;
+  // Origin is the fallback for the rest.
+  if (action !== "read") {
+    assertSameOrigin(request);
+  }
 
-  if (!token || !timingSafeEqual(token, expected)) {
-    throw new ApiError("Unauthorized", 401);
+  const limitName: LimitName = options.limit ?? "api";
+  const result = hit(limitName, `${limitName}:${user.id}`);
+  if (!result.ok) {
+    throw new RateLimitError(result);
+  }
+
+  return user;
+}
+
+function assertSameOrigin(request: Request): void {
+  const site = request.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") {
+    throw new ApiError("Cross-site request refused", 403);
+  }
+  if (!site) {
+    const origin = request.headers.get("origin");
+    if (origin) {
+      const host = request.headers.get("host");
+      let originHost: string;
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        throw new ApiError("Cross-site request refused", 403);
+      }
+      if (!host || originHost !== host) {
+        throw new ApiError("Cross-site request refused", 403);
+      }
+    }
   }
 }
 
-/** Constant-time compare, so a wrong key cannot be guessed byte by byte. */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+/** Carries the limit headers so the 429 tells the client when to retry. */
+export class RateLimitError extends Error {
+  constructor(readonly result: RateLimitResult) {
+    super("Too many requests");
+    this.name = "RateLimitError";
   }
-  return diff === 0;
 }
 
 /** Reads and parses a JSON body, with a clear message when it is malformed. */

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
-import { handler, jsonBody, ok, requireWriteAccess } from "@/lib/api";
+import { guard, handler, jsonBody, ok } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 import { pageQuerySchema, updatePageContentSchema } from "@/lib/validation";
 
@@ -14,6 +15,7 @@ import { pageQuerySchema, updatePageContentSchema } from "@/lib/validation";
  */
 
 export const GET = handler(async (request: NextRequest) => {
+  await guard(request, "pages");
   const db = requireDb();
   const url = new URL(request.url);
 
@@ -41,7 +43,7 @@ export const GET = handler(async (request: NextRequest) => {
 });
 
 export const PUT = handler(async (request: NextRequest) => {
-  requireWriteAccess(request);
+  const user = await guard(request, "pages");
 
   const parsed = updatePageContentSchema.parse(await jsonBody(request));
   const entries = "entries" in parsed ? parsed.entries : [parsed];
@@ -71,6 +73,17 @@ export const PUT = handler(async (request: NextRequest) => {
       })
     )
   );
+
+  await audit({
+    userId: user.id,
+    action: "UPDATE",
+    entity: "PageContent",
+    details: {
+      count: saved.length,
+      keys: entries.map((e) => `${e.page}.${e.section}.${e.key}`),
+    },
+    request,
+  });
 
   return ok({ updated: saved.length, entries: saved });
 });

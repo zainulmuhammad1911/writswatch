@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
-import { ApiError, handler, jsonBody, ok, requireWriteAccess } from "@/lib/api";
+import { ApiError, guard, handler, jsonBody, ok } from "@/lib/api";
+import { audit, changedFields } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 import { updateArticleSchema } from "@/lib/validation";
 
@@ -25,7 +26,8 @@ async function findOr404(
 }
 
 export const GET = handler(
-  async (_request: NextRequest, ctx: RouteContext<"/api/journal/[id]">) => {
+  async (request: NextRequest, ctx: RouteContext<"/api/journal/[id]">) => {
+    await guard(request, "journal");
     const db = requireDb();
     const { id } = await ctx.params;
     return ok(await findOr404(db, id));
@@ -34,7 +36,7 @@ export const GET = handler(
 
 export const PUT = handler(
   async (request: NextRequest, ctx: RouteContext<"/api/journal/[id]">) => {
-    requireWriteAccess(request);
+    const user = await guard(request, "journal");
     const db = requireDb();
     const { id } = await ctx.params;
     const existing = await findOr404(db, id);
@@ -42,6 +44,16 @@ export const PUT = handler(
     const { tags, authorId, ...fields } = updateArticleSchema.parse(
       await jsonBody(request)
     );
+
+    // Reassigning authorship is a super-admin action: otherwise an editor
+    // could move a piece under somebody else's name.
+    if (
+      authorId &&
+      authorId !== existing.authorId &&
+      user.role !== "SUPER_ADMIN"
+    ) {
+      throw new ApiError("Only a super admin can reassign an author", 403);
+    }
 
     const updated = await db.$transaction(async (tx) => {
       if (tags) {
@@ -76,18 +88,40 @@ export const PUT = handler(
       });
     });
 
+    await audit({
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Article",
+      entityId: existing.id,
+      details: {
+        slug: existing.slug,
+        changed: changedFields(existing, fields),
+        ...(tags ? { tagsReplaced: tags.length } : {}),
+      },
+      request,
+    });
+
     return ok(updated);
   }
 );
 
 export const DELETE = handler(
   async (request: NextRequest, ctx: RouteContext<"/api/journal/[id]">) => {
-    requireWriteAccess(request);
+    const user = await guard(request, "journal");
     const db = requireDb();
     const { id } = await ctx.params;
     const existing = await findOr404(db, id);
 
     await db.article.delete({ where: { id: existing.id } });
+
+    await audit({
+      userId: user.id,
+      action: "DELETE",
+      entity: "Article",
+      entityId: existing.id,
+      details: { slug: existing.slug, title: existing.title },
+      request,
+    });
 
     return ok({ id: existing.id, slug: existing.slug, deleted: true });
   }

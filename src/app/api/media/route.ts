@@ -3,16 +3,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { NextRequest } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
-import {
-  ApiError,
-  handler,
-  ok,
-  pagination,
-  requireWriteAccess,
-} from "@/lib/api";
+import sharp from "sharp";
+import { ApiError, guard, handler, ok, pagination } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 import {
   ALLOWED_MIME_TYPES,
+  MAX_DIMENSION,
   MAX_UPLOAD_BYTES,
   mediaMetaSchema,
   mediaQuerySchema,
@@ -30,6 +27,7 @@ import {
 const UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads");
 
 export const GET = handler(async (request: NextRequest) => {
+  await guard(request, "media");
   const db = requireDb();
   const url = new URL(request.url);
   const { take, skip } = pagination(url);
@@ -57,7 +55,8 @@ export const GET = handler(async (request: NextRequest) => {
 });
 
 export const POST = handler(async (request: NextRequest) => {
-  requireWriteAccess(request);
+  // 20 uploads a minute per user, per the PRD, rather than the general 100.
+  const user = await guard(request, "media", { limit: "upload" });
   const db = requireDb();
 
   const form = await request.formData().catch(() => {
@@ -90,6 +89,36 @@ export const POST = handler(async (request: NextRequest) => {
     folder: (form.get("folder") as string | null) ?? undefined,
   });
 
+  // Re-encode through sharp rather than writing the bytes as received. This
+  // does three jobs the PRD asks for: it proves the file really is the image
+  // its MIME type claims, it drops EXIF (which carries GPS coordinates and
+  // camera serials), and it yields the dimensions for the Media record.
+  const input = Buffer.from(await file.arrayBuffer());
+  let output: Buffer;
+  let width: number;
+  let height: number;
+  try {
+    const pipeline = sharp(input, { failOn: "error" }).rotate();
+    const metadata = await pipeline.metadata();
+    if (!metadata.width || !metadata.height) {
+      throw new Error("no dimensions");
+    }
+    if (metadata.width > MAX_DIMENSION || metadata.height > MAX_DIMENSION) {
+      throw new ApiError(
+        `Image is larger than ${MAX_DIMENSION}px on a side (${metadata.width}x${metadata.height})`,
+        413
+      );
+    }
+    // withMetadata() is deliberately not called, which is what strips EXIF.
+    output = await pipeline.toBuffer();
+    const after = await sharp(output).metadata();
+    width = after.width ?? metadata.width;
+    height = after.height ?? metadata.height;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("File is not a readable image", 415);
+  }
+
   // The stored name is generated, never taken from the upload. A client-supplied
   // filename is a path traversal waiting to happen.
   const extension = EXTENSIONS[file.type] ?? "bin";
@@ -104,21 +133,35 @@ export const POST = handler(async (request: NextRequest) => {
   }
 
   await mkdir(directory, { recursive: true });
-  await writeFile(
-    path.join(directory, filename),
-    Buffer.from(await file.arrayBuffer())
-  );
+  await writeFile(path.join(directory, filename), output);
 
   const created = await db.media.create({
     data: {
       filename,
       originalName: file.name.slice(0, 255),
       mimeType: file.type,
-      size: file.size,
+      // The re-encoded size, not what arrived, so the record matches the file.
+      size: output.byteLength,
+      width,
+      height,
       url: `/uploads/${folder ? `${folder}/` : ""}${filename}`,
       alt: meta.alt,
       folder: folder || null,
     },
+  });
+
+  await audit({
+    userId: user.id,
+    action: "CREATE",
+    entity: "Media",
+    entityId: created.id,
+    details: {
+      url: created.url,
+      mimeType: created.mimeType,
+      size: created.size,
+      dimensions: `${width}x${height}`,
+    },
+    request,
   });
 
   return ok(created, 201);

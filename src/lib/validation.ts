@@ -122,7 +122,11 @@ export const ALLOWED_MIME_TYPES = [
   "image/avif",
 ] as const;
 
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+/** PRD section 9: max 10MB. */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** Refuse absurd pixel counts, which are a decompression-bomb vector. */
+export const MAX_DIMENSION = 8000;
 
 export const mediaQuerySchema = z.object({
   folder: z.string().trim().max(120).optional(),

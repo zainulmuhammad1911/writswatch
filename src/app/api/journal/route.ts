@@ -1,13 +1,7 @@
 import type { NextRequest } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
-import {
-  ApiError,
-  handler,
-  jsonBody,
-  ok,
-  pagination,
-  requireWriteAccess,
-} from "@/lib/api";
+import { ApiError, guard, handler, jsonBody, ok, pagination } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 import { articleQuerySchema, createArticleSchema } from "@/lib/validation";
 
@@ -17,6 +11,7 @@ import { articleQuerySchema, createArticleSchema } from "@/lib/validation";
  */
 
 export const GET = handler(async (request: NextRequest) => {
+  await guard(request, "journal");
   const db = requireDb();
   const url = new URL(request.url);
   const { take, skip } = pagination(url);
@@ -61,7 +56,7 @@ export const GET = handler(async (request: NextRequest) => {
 });
 
 export const POST = handler(async (request: NextRequest) => {
-  requireWriteAccess(request);
+  const user = await guard(request, "journal");
 
   const { tags, authorId, ...fields } = createArticleSchema.parse(
     await jsonBody(request)
@@ -69,18 +64,19 @@ export const POST = handler(async (request: NextRequest) => {
 
   const db = requireDb();
 
-  // Article.authorId is required by the schema. There is no session to read it
-  // from until Fase 8, so fall back to the oldest user, which the seed creates.
-  const author = authorId
-    ? await db.user.findUnique({ where: { id: authorId } })
-    : await db.user.findFirst({ orderBy: { createdAt: "asc" } });
-
-  if (!author) {
-    throw new ApiError(
-      "No author available. Seed the database or pass authorId.",
-      409
-    );
+  // The author defaults to whoever is signed in. Only a role that can manage
+  // users may attribute a piece to somebody else, or an editor could publish
+  // under a colleague's name.
+  let authorRecord = { id: user.id };
+  if (authorId && authorId !== user.id) {
+    if (user.role !== "SUPER_ADMIN") {
+      throw new ApiError("Only a super admin can set another author", 403);
+    }
+    const other = await db.user.findUnique({ where: { id: authorId } });
+    if (!other) throw new ApiError("Author not found", 409);
+    authorRecord = { id: other.id };
   }
+  const author = authorRecord;
 
   const created = await db.article.create({
     data: {
@@ -103,6 +99,19 @@ export const POST = handler(async (request: NextRequest) => {
         : undefined,
     },
     include: { tags: { include: { tag: true } } },
+  });
+
+  await audit({
+    userId: user.id,
+    action: "CREATE",
+    entity: "Article",
+    entityId: created.id,
+    details: {
+      slug: created.slug,
+      title: created.title,
+      published: created.published,
+    },
+    request,
   });
 
   return ok(created, 201);

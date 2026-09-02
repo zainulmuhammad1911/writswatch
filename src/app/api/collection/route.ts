@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
-import { handler, jsonBody, ok, pagination, requireWriteAccess } from "@/lib/api";
+import { guard, handler, jsonBody, ok, pagination } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 import { createTimepieceSchema, timepieceQuerySchema } from "@/lib/validation";
 
@@ -16,6 +17,7 @@ function eraRange(era: string): { gte: number; lte: number } {
 }
 
 export const GET = handler(async (request: NextRequest) => {
+  await guard(request, "collection");
   const db = requireDb();
   const url = new URL(request.url);
   const { take, skip } = pagination(url);
@@ -66,7 +68,7 @@ export const GET = handler(async (request: NextRequest) => {
 });
 
 export const POST = handler(async (request: NextRequest) => {
-  requireWriteAccess(request);
+  const user = await guard(request, "collection");
 
   // Validate before reaching for the database. A malformed payload is the
   // client's problem and is worth reporting even when the database is down.
@@ -92,6 +94,15 @@ export const POST = handler(async (request: NextRequest) => {
         : undefined,
     },
     include: { images: { orderBy: { sortOrder: "asc" } } },
+  });
+
+  await audit({
+    userId: user.id,
+    action: "CREATE",
+    entity: "Timepiece",
+    entityId: created.id,
+    details: { slug: created.slug, brand: created.brand, model: created.model },
+    request,
   });
 
   return ok(created, 201);

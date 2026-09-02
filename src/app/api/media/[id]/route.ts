@@ -1,7 +1,8 @@
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import type { NextRequest } from "next/server";
-import { ApiError, handler, ok, requireWriteAccess } from "@/lib/api";
+import { ApiError, guard, handler, ok } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 
 /**
@@ -12,7 +13,7 @@ const UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads");
 
 export const DELETE = handler(
   async (request: NextRequest, ctx: RouteContext<"/api/media/[id]">) => {
-    requireWriteAccess(request);
+    const user = await guard(request, "media");
     const db = requireDb();
     const { id } = await ctx.params;
 
@@ -39,6 +40,15 @@ export const DELETE = handler(
     });
 
     await db.media.delete({ where: { id } });
+
+    await audit({
+      userId: user.id,
+      action: "DELETE",
+      entity: "Media",
+      entityId: id,
+      details: { url: media.url, filename: media.filename },
+      request,
+    });
 
     return ok({ id, deleted: true });
   }

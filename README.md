@@ -135,23 +135,89 @@ per-field `issues`, 503 database or write access not configured. Unexpected
 faults return a bare 500 and log the detail rather than returning it, so a
 stack trace or a Postgres error never reaches an HTTP body.
 
-### Writes are gated, and it is temporary
+### Everything behind /admin and /api needs a session
 
-There is no login until Fase 8. Without a check these endpoints would let
-anyone create, edit and delete museum records, so every mutating method
-requires:
+`src/middleware.ts` gates both. A browser navigation gets `302 /login?next=…`;
+an API call gets `401` in the same JSON envelope as every other endpoint, so a
+fetch never has to parse an HTML login page to learn it was signed out.
 
-```
-Authorization: Bearer $ADMIN_API_KEY
-```
+**The auth config is split in two, and it has to be.** `lib/auth.config.ts` is
+the Edge-safe half: cookie names, session strategy, the jwt/session callbacks,
+and no providers. `lib/auth.ts` adds the credentials provider, which pulls in
+bcrypt and Prisma. Middleware is bundled for Edge, so importing `lib/auth`
+there fails at module load with `Native module not found: node:util/types`.
+Middleware only verifies an existing JWT, which needs the secret and Web
+Crypto and nothing else.
 
-If `ADMIN_API_KEY` is unset the route refuses with 503 rather than allowing the
-request, so an unconfigured deployment fails closed. Generate one with
-`openssl rand -hex 32`. NextAuth replaces this in Fase 8; delete
-`requireWriteAccess` then.
+Sessions are JWTs in an httpOnly cookie, 24h. The credentials provider cannot
+use database sessions, which is why the schema's `Session` model stays empty;
+it is kept for an OAuth provider later.
 
-Uploads are validated on sniffed MIME type, capped at 8MB, and stored under a
-generated UUID filename. A client-supplied filename is never used as a path.
+### Roles
+
+One matrix in `lib/rbac.ts`, consulted by both the API and the admin UI so a
+permission cannot drift between where it is enforced and where it is shown.
+
+| | collection | journal | media | pages | settings | users | audit |
+|---|---|---|---|---|---|---|---|
+| SUPER_ADMIN | CRUD | CRUD | CRUD | CRUD | CRUD | CRUD | read |
+| ADMIN | CRUD | CRUD | CRUD | CRUD | — | — | read |
+| EDITOR | CRU | CRU | CR | read | — | — | — |
+
+`guard(request, resource)` does session, then permission, then rate limit, in
+that order: throttling before authorising would let an anonymous caller burn
+another user's budget.
+
+### Rate limits
+
+From PRD section 9, in `lib/rate-limit.ts`: login 5 per 15 min per IP, API 100
+per min per user, upload 20 per min per user. A 429 carries `Retry-After` and
+`X-RateLimit-*`.
+
+Counters live in process memory. That is fine for one server and **wrong for
+more than one**: each process keeps its own counters, so N instances allow N
+times the limit, and serverless resets them on cold start. Swapping in Redis
+means replacing the body of `hit()` and nothing else.
+
+The login limiter counts before the password is checked, so wrong guesses
+cannot buy attempts, and an unknown email is compared against a dummy bcrypt
+hash at the same cost so response time does not reveal which addresses exist.
+
+### CSRF
+
+NextAuth's built-in token covers its own endpoints. It does not cover ours, and
+a cookie-authenticated POST from another origin would otherwise work, so
+`guard()` refuses any mutation whose `Sec-Fetch-Site` is cross-site, falling
+back to comparing `Origin` against `Host` for clients that do not send it.
+
+### Audit trail
+
+`lib/audit.ts` writes a row for every create, update and delete: who, what,
+which record, what changed, IP, user agent. Update records carry only the
+fields that actually changed.
+
+Writing the log never fails the operation it describes. A failed insert is
+logged and swallowed, because rolling back a successful edit because the audit
+table was unreachable would be a denial of service on the whole CMS. Keys that
+look like passwords or tokens are redacted, and long strings truncated, so
+article bodies do not fill the table.
+
+Uploads are validated on sniffed MIME typeUploads are validated on sniffed MIME type, capped at 10MB and 8000px a side,
+and stored under a generated UUID filename. A client-supplied filename is never
+used as a path.
+
+Every upload is re-encoded through sharp rather than written as received. That
+proves the file really is the image its MIME type claims, drops EXIF (which
+carries GPS coordinates and camera serials), and yields the dimensions for the
+Media record.
+
+### XSS
+
+React escapes by default and `ArticleBody` parses a fixed block syntax into
+real elements rather than using `dangerouslySetInnerHTML`, so no user content
+reaches the DOM as markup. DOMPurify is therefore not needed; if a rich-text
+editor is ever added that emits HTML, it becomes necessary and the CSP's
+`unsafe-inline` on scripts should go at the same time.
 
 ## Design system
 

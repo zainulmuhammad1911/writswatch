@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
-import { ApiError, handler, jsonBody, ok, requireWriteAccess } from "@/lib/api";
+import { ApiError, guard, handler, jsonBody, ok } from "@/lib/api";
+import { audit, changedFields } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 import { updateTimepieceSchema } from "@/lib/validation";
 
@@ -25,7 +26,8 @@ async function findOr404(
 }
 
 export const GET = handler(
-  async (_request: NextRequest, ctx: RouteContext<"/api/collection/[id]">) => {
+  async (request: NextRequest, ctx: RouteContext<"/api/collection/[id]">) => {
+    await guard(request, "collection");
     const db = requireDb();
     const { id } = await ctx.params;
     return ok(await findOr404(db, id));
@@ -34,7 +36,7 @@ export const GET = handler(
 
 export const PUT = handler(
   async (request: NextRequest, ctx: RouteContext<"/api/collection/[id]">) => {
-    requireWriteAccess(request);
+    const user = await guard(request, "collection");
     const db = requireDb();
     const { id } = await ctx.params;
     const existing = await findOr404(db, id);
@@ -68,19 +70,46 @@ export const PUT = handler(
       });
     });
 
+    await audit({
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Timepiece",
+      entityId: existing.id,
+      details: {
+        slug: existing.slug,
+        changed: changedFields(existing, fields),
+        ...(images ? { imagesReplaced: images.length } : {}),
+      },
+      request,
+    });
+
     return ok(updated);
   }
 );
 
 export const DELETE = handler(
   async (request: NextRequest, ctx: RouteContext<"/api/collection/[id]">) => {
-    requireWriteAccess(request);
+    const user = await guard(request, "collection");
     const db = requireDb();
     const { id } = await ctx.params;
     const existing = await findOr404(db, id);
 
     // Images cascade with the timepiece (onDelete: Cascade in the schema).
     await db.timepiece.delete({ where: { id: existing.id } });
+
+    await audit({
+      userId: user.id,
+      action: "DELETE",
+      entity: "Timepiece",
+      entityId: existing.id,
+      details: {
+        slug: existing.slug,
+        brand: existing.brand,
+        model: existing.model,
+        imagesRemoved: existing.images.length,
+      },
+      request,
+    });
 
     return ok({ id: existing.id, slug: existing.slug, deleted: true });
   }

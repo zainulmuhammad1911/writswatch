@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
-import { handler, jsonBody, ok, requireWriteAccess } from "@/lib/api";
+import { guard, handler, jsonBody, ok } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
 import { updateSettingsSchema } from "@/lib/validation";
 
@@ -8,7 +9,8 @@ import { updateSettingsSchema } from "@/lib/validation";
  * PUT /api/settings  upsert one or many
  */
 
-export const GET = handler(async () => {
+export const GET = handler(async (request: NextRequest) => {
+  await guard(request, "settings");
   const db = requireDb();
   const rows = await db.siteSetting.findMany({ orderBy: { key: "asc" } });
 
@@ -20,7 +22,7 @@ export const GET = handler(async () => {
 });
 
 export const PUT = handler(async (request: NextRequest) => {
-  requireWriteAccess(request);
+  const user = await guard(request, "settings");
 
   const parsed = updateSettingsSchema.parse(await jsonBody(request));
   const settings = "settings" in parsed ? parsed.settings : [parsed];
@@ -43,6 +45,14 @@ export const PUT = handler(async (request: NextRequest) => {
       })
     )
   );
+
+  await audit({
+    userId: user.id,
+    action: "UPDATE",
+    entity: "SiteSetting",
+    details: { keys: settings.map((s) => s.key) },
+    request,
+  });
 
   return ok({ updated: saved.length, settings: saved });
 });
