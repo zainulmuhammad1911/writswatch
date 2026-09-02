@@ -238,7 +238,7 @@ stack trace or a Postgres error never reaches an HTTP body.
 
 ### Everything behind /admin and /api needs a session
 
-`src/middleware.ts` gates both. A browser navigation gets `302 /login?next=…`;
+`src/proxy.ts` gates both. A browser navigation gets `302 /login?next=…`;
 an API call gets `401` in the same JSON envelope as every other endpoint, so a
 fetch never has to parse an HTML login page to learn it was signed out.
 
@@ -563,7 +563,7 @@ objects that are not for sale.
   this morning is listed this morning. Only published records appear, because
   a URL that 404s is how a sitemap loses a crawler's trust.
 - **`robots.txt`** disallows `/admin`, `/api/` and `/login`. That is
-  housekeeping, not security — `src/middleware.ts` is what protects them.
+  housekeeping, not security — `src/proxy.ts` is what protects them.
 - **Share image** — `app/opengraph-image.tsx` generates the default card at
   build time. Satori cannot see the fonts `next/font` self-hosts, so
   Newsreader is fetched once per build (requesting the CSS without a
@@ -624,13 +624,27 @@ The skeleton reserves the same space as the real grid, is announced once
 (`role="status"`, shapes `aria-hidden`) rather than as twenty empty boxes, and
 its pulse stops under `motion-reduce` while the layout stays reserved.
 
+## `src/proxy.ts`, not `src/middleware.ts`
+
+Next 16 renamed the file convention and deprecated the old name, which printed
+a warning on every build. The contract is unchanged: same default export, same
+`config.matcher`, same Edge runtime. Verified after the rename — the gate still
+answers `307 /login?next=…` on `/admin/*` and `401 {"success":false}` on
+`/api/*`, the CSP scoping is untouched, and a write through the gated API still
+lands and audits.
+
+`npx @next/codemod@canary middleware-to-proxy .` reports "0 modified" here. It
+only renames a function literally named `middleware`, and this one is an
+anonymous default export wrapped by NextAuth's `auth()`, so there is no
+identifier for it to find. The rename was done by hand.
+
 ## Content Security Policy
 
 Two policies, both built in `lib/csp.ts`.
 
 | | Routes | `script-src` |
 |---|---|---|
-| Strict | `/admin`, `/login`, `/api` (via `src/middleware.ts`) | `'self' 'nonce-…' 'strict-dynamic'` |
+| Strict | `/admin`, `/login`, `/api` (via `src/proxy.ts`) | `'self' 'nonce-…' 'strict-dynamic'` |
 | Public | everything else (via `next.config.ts`) | `'self' 'unsafe-inline'` |
 
 ### Why two
@@ -679,7 +693,7 @@ are sent independently, so two policies quietly become their intersection — so
 `/api/auth/*` therefore gets no CSP at all; its responses are JSON, where the
 policy governs nothing.
 
-The nonce has to reach the renderer, not just the browser. The middleware sets
+The nonce has to reach the renderer, not just the browser. The proxy sets
 it on the **request** headers as well as the response, and Next reads it back
 out of there to stamp its own script tags. Verified: on `/login` and every
 admin page, all 25–36 script tags carry a nonce, the document's nonce equals

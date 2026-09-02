@@ -5,16 +5,22 @@ import { newNonce, strictCsp } from "@/lib/csp";
 
 // Built from the edge-safe config, not from @/lib/auth: the latter imports
 // bcrypt and Prisma through the credentials provider, which cannot load in
-// the Edge runtime middleware is bundled for.
+// the Edge runtime this file is bundled for.
 const { auth } = NextAuth(authConfig);
 
 /**
  * Two jobs: the login gate, and the strict Content Security Policy.
  *
+ * Formerly `src/middleware.ts`. Next 16 renamed the convention to `proxy` and
+ * deprecated the old filename; the contract is unchanged, so this is a rename
+ * and nothing else. `@next/codemod middleware-to-proxy` leaves the file alone,
+ * because it only renames a function literally called `middleware` and this
+ * one is an anonymous default export wrapped by NextAuth's `auth()`.
+ *
  * The gate. Only the session cookie is inspected here. The role rides on the
- * JWT, so no database query is needed, which matters because middleware has no
- * access to Prisma. Per-resource role checks happen in the route handlers,
- * where a 403 can say which permission was missing.
+ * JWT, so no database query is needed, which matters because this runs in the
+ * Edge runtime with no access to Prisma. Per-resource role checks happen in
+ * the route handlers, where a 403 can say which permission was missing.
  *
  * A browser navigation gets a redirect to /login with the destination in
  * ?next=. An API call gets a 401 JSON body in the same envelope as every other

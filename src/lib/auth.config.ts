@@ -8,10 +8,10 @@ import type { Role } from "@/generated/prisma/client";
  *
  * Middleware is bundled for Edge, where Node built-ins do not exist. The full
  * config in `auth.ts` pulls in Prisma and bcrypt through the credentials
- * provider, so importing it from middleware fails at module load with
+ * provider, so importing it from the proxy fails at module load with
  * "Native module not found: node:util/types".
  *
- * This file therefore carries everything middleware needs (cookie names,
+ * This file therefore carries everything the proxy needs (cookie names,
  * session strategy, the jwt/session callbacks) and no providers. Verifying an
  * existing JWT only needs the secret and Web Crypto, both of which Edge has.
  * Signing in happens in the Node runtime, through `auth.ts`.

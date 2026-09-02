@@ -12,7 +12,7 @@ import { clientIp, forgive, hit } from "@/lib/rate-limit";
  *
  * Extends the edge-safe half in `auth.config.ts` with the credentials
  * provider, which needs bcrypt and Prisma. Anything importing this file lands
- * in the Node bundle, so middleware must not.
+ * in the Node bundle, so `src/proxy.ts` must not.
  *
  * Sessions are JWTs in an httpOnly cookie, which the credentials provider
  * requires: it cannot use database sessions. That is why the PRD's `Session`

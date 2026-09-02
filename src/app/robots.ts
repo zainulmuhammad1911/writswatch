@@ -6,7 +6,7 @@ import { absolute } from "@/lib/seo";
  *
  * This is housekeeping, not security: it keeps admin URLs out of search
  * results and stops crawlers walking endpoints that will only return 401.
- * What actually protects those routes is the middleware in `src/middleware.ts`.
+ * What actually protects those routes is the gate in `src/proxy.ts`.
  * A `Disallow` line is a request, and the crawlers that matter here are not
  * the ones worth defending against.
  */

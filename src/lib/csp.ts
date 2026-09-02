@@ -99,7 +99,7 @@ export function newNonce(): string {
  * Applied to every response rather than just the admin, because the public
  * pages are the ones an attacker can reach without credentials. The CSP is
  * attached separately: `next.config.ts` puts the public policy on the public
- * routes, and the middleware puts the strict one on everything it matches.
+ * routes, and `src/proxy.ts` puts the strict one on everything it matches.
  */
 export const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },

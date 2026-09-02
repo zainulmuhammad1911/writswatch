@@ -4,13 +4,13 @@ import { publicCsp, securityHeaders } from "./src/lib/csp";
 /**
  * The public Content Security Policy.
  *
- * Scoped to everything except the routes the middleware covers, so a response
+ * Scoped to everything except the routes `src/proxy.ts` covers, so a response
  * never carries two CSP headers. Browsers enforce every policy they are sent
  * independently, which means two policies quietly become their intersection —
  * a debugging problem nobody needs.
  *
  * `/admin`, `/login` and `/api` get the strict nonce policy from
- * `src/middleware.ts` instead. See `src/lib/csp.ts` for why there are two.
+ * `src/proxy.ts` instead. See `src/lib/csp.ts` for why there are two.
  */
 const PUBLIC_ROUTES = "/((?!admin|login|api/).*)";
 
