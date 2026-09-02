@@ -10,19 +10,30 @@ import { PerspectiveGrid } from "@/components/public/PerspectiveGrid";
 import { PixelatedImageTrail } from "@/components/public/PixelatedImageTrail";
 import { AnimatedLinkButton } from "@/components/ui/AnimatedButton";
 import { Reveal } from "@/components/ui/Reveal";
+import { getSiteSettings } from "@/lib/content";
 import {
+  countTimepieces,
   getFeaturedTimepieces,
-  getHomeStats,
-  pageContent,
+  getHomeContent,
 } from "@/lib/queries";
+import { JsonLd, clamp, museumJsonLd, pageMetadata } from "@/lib/seo";
 import { primaryImage } from "@/types";
 
-const { hero, about, collection, featured, cta } = pageContent.home;
-
-export const metadata: Metadata = {
-  description:
-    "A private museum built around one collection of mechanical watches, preserved and documented.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const [{ about }, settings] = await Promise.all([
+    getHomeContent(),
+    getSiteSettings(),
+  ]);
+  return pageMetadata({
+    // No `title` here: the homepage keeps the root layout's default rather
+    // than rendering as "Home — Indonesia Wristwatch Museum".
+    description:
+      clamp(settings.seoDescription) ??
+      clamp(about.body[0]) ??
+      settings.description,
+    path: "/",
+  });
+}
 
 /** Fourteen images: enough to make the cylinder wide enough to reach the edges. */
 const heroImages = Array.from({ length: 14 }, (_, i) => ({
@@ -36,13 +47,23 @@ const trailImages = Array.from(
 );
 
 export default async function HomePage() {
-  const [featuredTimepieces, homeStats] = await Promise.all([
-    getFeaturedTimepieces(),
-    getHomeStats(),
-  ]);
+  const [content, featuredTimepieces, settings, timepieceCount] =
+    await Promise.all([
+      getHomeContent(),
+      getFeaturedTimepieces(),
+      getSiteSettings(),
+      countTimepieces(),
+    ]);
+  const { hero, about, collection, featured, cta, stats } = content;
 
   return (
     <>
+      {/* The museum itself, declared once on the homepage. Every other page's
+          structured data points back at this `@id`. */}
+      <JsonLd
+        data={museumJsonLd(settings, { timepieces: timepieceCount })}
+      />
+
       {/* ---------------------------------------------------------------- */}
       {/* HERO                                                             */}
       {/* ---------------------------------------------------------------- */}
@@ -59,11 +80,15 @@ export default async function HomePage() {
         <div className="pointer-events-none relative flex flex-1 flex-col pt-header lg:pt-header-lg">
           <div className="shell pt-10 text-center sm:pt-12">
             <h1 className="text-display text-graphite uppercase">
-              Indonesia
-              <br />
-              Wristwatch
-              <br />
-              Museum
+              {/* One word per line, from whatever the headline is set to. */}
+              {hero.headline.split(" ").map((word, index) => (
+                <span key={word} className="block">
+                  {word}
+                  {index < hero.headline.split(" ").length - 1 && (
+                    <span className="sr-only"> </span>
+                  )}
+                </span>
+              ))}
             </h1>
             <p className="mx-auto mt-7 max-w-[38ch] text-h3 font-sans text-slate">
               {hero.tagline}
@@ -139,7 +164,7 @@ export default async function HomePage() {
             </p>
           </Reveal>
 
-          <CollectionStats stats={homeStats} />
+          <CollectionStats stats={stats} />
         </div>
       </section>
 

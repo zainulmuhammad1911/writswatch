@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { NAV_ITEMS, type NavItem } from "@/components/public/Header";
 import { cn } from "@/lib/utils";
@@ -44,22 +45,39 @@ function MailMark() {
   );
 }
 
-export interface SocialLink {
+interface SocialLink {
   label: string;
   href: string;
   icon: React.ReactNode;
 }
 
-export const SOCIAL_LINKS: SocialLink[] = [
-  { label: "Instagram", href: "https://instagram.com/", icon: <InstagramMark /> },
-  { label: "YouTube", href: "https://youtube.com/", icon: <YouTubeMark /> },
-  { label: "X", href: "https://x.com/", icon: <XMark /> },
-  {
-    label: "Email",
-    href: "mailto:hello@indonesiawristwatchmuseum.com",
-    icon: <MailMark />,
-  },
-];
+/** The addresses, as an editor sets them in Settings. */
+export interface SocialAddresses {
+  instagram?: string;
+  youtube?: string;
+  x?: string;
+  email?: string;
+}
+
+/**
+ * Turns the settings into the row of cards, dropping anything unset.
+ *
+ * A social card that goes nowhere is worse than a missing one, so an empty
+ * setting removes the icon rather than linking to the platform's homepage.
+ */
+function socialLinks(addresses: SocialAddresses): SocialLink[] {
+  const candidates: { label: string; href?: string; icon: React.ReactNode }[] = [
+    { label: "Instagram", href: addresses.instagram, icon: <InstagramMark /> },
+    { label: "YouTube", href: addresses.youtube, icon: <YouTubeMark /> },
+    { label: "X", href: addresses.x, icon: <XMark /> },
+    {
+      label: "Email",
+      href: addresses.email ? `mailto:${addresses.email}` : undefined,
+      icon: <MailMark />,
+    },
+  ];
+  return candidates.filter((link): link is SocialLink => Boolean(link.href));
+}
 
 /**
  * Icon-only card. The label is the accessible name and the tooltip, never
@@ -88,15 +106,22 @@ function SocialCard({ link }: { link: SocialLink }) {
 
 export interface FooterProps {
   items?: NavItem[];
-  social?: SocialLink[];
+  social?: SocialAddresses;
+  /** Site name, for the copyright line. From Settings. */
+  siteName?: string;
+  /** Rendered on the server so the year cannot drift between the two. */
+  year?: number;
   className?: string;
 }
 
 export function Footer({
   items = NAV_ITEMS,
-  social = SOCIAL_LINKS,
+  social = {},
+  siteName = "Indonesia Wristwatch Museum",
+  year = 2026,
   className,
 }: FooterProps) {
+  const links = socialLinks(social);
   return (
     <footer
       className={cn("border-t border-border-grey bg-cool-white", className)}
@@ -108,13 +133,14 @@ export function Footer({
             aria-label="Indonesia Wristwatch Museum — home"
             className="flex items-center gap-6 self-start rounded-sm focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-4 focus-visible:ring-offset-cool-white focus-visible:outline-none"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size
-                mark served from /public. */}
-            <img
+            {/* Same mark as the header, at twice the size. Lazy, because the
+                footer is below the fold on every page. */}
+            <Image
               src="/images/logo.png"
               alt=""
               width={112}
               height={112}
+              sizes="112px"
               className="h-20 w-auto shrink-0 lg:h-28"
             />
             <span
@@ -132,12 +158,16 @@ export function Footer({
           <div className="flex flex-col gap-12 sm:flex-row sm:gap-20">
             <nav aria-label="Footer">
               <h2 className="eyebrow">Museum</h2>
-              <ul className="mt-5 flex flex-col gap-3">
+              {/* Each link is its own 44px row rather than an 18px line with a
+                  gap between: measured at 375px these were 38x18 targets,
+                  under the minimum for a thumb. The pitch replaces the gap,
+                  so the column reads the same and is a third taller. */}
+              <ul className="mt-3 flex flex-col">
                 {items.map((item) => (
                   <li key={item.href}>
                     <Link
                       href={item.href}
-                      className="text-small text-slate transition-colors duration-fast hover:text-graphite"
+                      className="inline-flex min-h-11 items-center text-small text-slate transition-colors duration-fast hover:text-graphite"
                     >
                       {item.label}
                     </Link>
@@ -146,22 +176,24 @@ export function Footer({
               </ul>
             </nav>
 
-            <div>
-              <h2 className="eyebrow">Elsewhere</h2>
-              <ul className="mt-5 flex flex-wrap items-center gap-3">
-                {social.map((link) => (
-                  <li key={link.label}>
-                    <SocialCard link={link} />
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {links.length > 0 && (
+              <div>
+                <h2 className="eyebrow">Elsewhere</h2>
+                <ul className="mt-5 flex flex-wrap items-center gap-3">
+                  {links.map((link) => (
+                    <li key={link.label}>
+                      <SocialCard link={link} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="mt-16 border-t border-border-grey pt-8 lg:mt-24">
           <p className="text-caption tracking-caption text-slate uppercase">
-            © 2026 Indonesia Wristwatch Museum
+            © {year} {siteName}
           </p>
         </div>
       </div>

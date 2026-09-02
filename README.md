@@ -108,8 +108,59 @@ While `DATABASE_URL` is unset it serves `lib/fixtures.ts` and logs a warning at
 startup. Once the database is live, delete the `if (!db)` branches and the
 fixtures import; no signature changes.
 
-`lib/fixtures.ts` (the old `lib/data.ts`) now has two jobs: the seed source,
-and that fallback. Pages must not import it directly.
+`lib/fixtures.ts` (the old `lib/data.ts`) now has three jobs: the seed source,
+that fallback, and — since Fase 10 — the defaults the editable copy merges
+over. Pages must not import it directly.
+
+### Editable copy (Fase 10)
+
+The dashboard stores copy as flat `(page, section, key)` rows, because that is
+the shape a generic editor can render without knowing anything about the page.
+Pages want nested objects. `lib/content.ts` is the seam: rows in, tree out,
+merged over the fixtures.
+
+Two rules about key names, because the tree is rebuilt from them:
+
+- a dotted key nests — `body.0` becomes `body[0]`;
+- a section whose keys are **all** integers becomes an array.
+
+So a list inside a section that also has scalar keys must be namespaced
+(`items.0.title`, not `0.title`). Getting this wrong is not a subtle failure:
+the first version seeded the journal's archive tiles as `0.title`, the whole
+`archive` section materialised as an array, and the build died on
+`archive.items.map is not a function`.
+
+Merging rather than replacing matters too. An editor who has never touched the
+journal hero still gets a journal hero, and a key the seed never created must
+not come back `undefined` and blank out an attribute. A row whose value is
+blank counts as unset, so clearing a field in the dashboard restores the
+default instead of rendering nothing.
+
+The exception is `SiteSetting`: the social addresses, contact email and SEO
+defaults have **no** fallback value. A cleared social URL has to mean "do not
+show this card", and a built-in default would silently turn it into a link to
+instagram.com's front page. Site name, tagline and description keep defaults,
+because a page with no name in its `<title>` is not a trade worth making.
+
+> The seeded social URLs are placeholders (`https://instagram.com/` and
+> friends). Set the real handles in Settings before launch, or clear them.
+
+### Caching and revalidation
+
+Every page in the `(public)` group is regenerated at most once an hour
+(`revalidate = 3600` in the group layout). The hour is the backstop, not the
+mechanism: each write route in `/api` calls `revalidatePath` for the pages its
+change can appear on (`lib/revalidate.ts`), so a published edit is live on the
+next request. A rename revalidates both slugs, since the old address has a
+cached page of its own.
+
+`/collection` is the one dynamic route, because it reads `searchParams`. That
+costs it CDN caching — it answers `Cache-Control: private, no-cache` where the
+others answer `s-maxage=3600, stale-while-revalidate` — which is the price of
+filtering in Postgres rather than in the browser. Partial prerendering
+(`cacheComponents`) would give back a cacheable shell; the page is already
+structured for it, since `searchParams` is awaited inside the Suspense
+boundary rather than in the page.
 
 ## Admin dashboard (Fase 9)
 
@@ -476,6 +527,222 @@ and `heuer-autavia-2446` come from photographs with no legible branding, so
 their brand, model, reference and year are informed guesses. Movement, case
 size and material are unverified throughout. There is a warning at the top of
 `data.ts` naming the three.
+
+## SEO (Fase 10)
+
+`lib/seo.tsx` holds it all. Two rules run through it. Descriptions come from
+the record, never from a template with the record's name dropped into it,
+because a result reading "Rolex Submariner — a timepiece from the collection"
+tells a reader nothing the title did not. And structured data only states what
+the database holds: no invented dates, no placeholder authors, no prices on
+objects that are not for sale.
+
+- **Metadata** — `pageMetadata()` gives every route a canonical path, an Open
+  Graph block that agrees with it, and a Twitter card. Canonicals are paths;
+  `metadataBase` makes them absolute, so the host is configured once, in
+  `NEXT_PUBLIC_SITE_URL`. **Left at localhost on a deploy, the sitemap tells
+  search engines to crawl a machine they cannot reach.**
+- **Filtered views** — `/collection?brand=Rolex` canonicalises to
+  `/collection`. It is a view of a page that is already indexed.
+- **Structured data** — `Museum` on the homepage (with `@id`, which every
+  other page's data points back at), `CollectionPage` + `ItemList` on the
+  listing, `AboutPage`, `Blog` + `BlogPosting` on the journal, `Article` on a
+  piece, `ItemPage` + `CreativeWork` on a timepiece, and `BreadcrumbList` on
+  both detail routes.
+- **A timepiece is a `CreativeWork`, not a `Product`** — nothing here is for
+  sale, and `Product` invites the price, availability and review fields that
+  would have to be either omitted or fabricated. `creator` is the
+  manufacturer; `dateCreated` is emitted only when the record has a year.
+- **`Museum` carries no address or opening hours** — the about page says
+  plainly that there is no building, and structured data implying one would be
+  a lie told to a search engine.
+- **Articles are credited to the museum** — they are unsigned on the site, so
+  inventing a byline would put a name in Google's index that appears nowhere
+  in the writing.
+- **`sitemap.xml`** is generated from the database, so a timepiece published
+  this morning is listed this morning. Only published records appear, because
+  a URL that 404s is how a sitemap loses a crawler's trust.
+- **`robots.txt`** disallows `/admin`, `/api/` and `/login`. That is
+  housekeeping, not security — `src/middleware.ts` is what protects them.
+- **Share image** — `app/opengraph-image.tsx` generates the default card at
+  build time. Satori cannot see the fonts `next/font` self-hosts, so
+  Newsreader is fetched once per build (requesting the CSS without a
+  User-Agent makes Google serve TrueType, which Satori can parse); if the
+  fetch fails the card still renders in the fallback sans rather than failing
+  the build.
+
+One trap worth recording: Next merges metadata **one field at a time**. A page
+returning its own `openGraph` block replaces the layout's outright, so the
+first version of this shipped every page with no `og:image` at all, even
+though the root layout set one. The share image is now resolved inside
+`pageMetadata()`, which is the only place that cannot be forgotten.
+
+## Loading and error states (Fase 10)
+
+`not-found.tsx` (404) and `error.tsx` (500) share one frame,
+`components/public/ErrorScreen.tsx`: a rule, a label, a display heading, one
+paragraph of plain explanation, then real routes out. No illustration, and no
+apology in a voice the rest of the site never uses.
+
+- The 404 echoes the requested path, because almost every 404 is a typo or a
+  stale link and seeing the address back is what tells a visitor which.
+- The 500 shows `error.digest` and not `error.message`. The digest is the hash
+  Next also writes to the server log, so a report is traceable; the message
+  would be a stack trace on the page in development and a generic string in
+  production either way.
+- There are two 404s. `(public)/not-found.tsx` handles a page that called
+  `notFound()`; the root `not-found.tsx` handles a URL matching no route at
+  all and brings its own header and footer through `SiteChrome`, because an
+  unmatched URL is the one page a visitor most needs navigation on.
+- `getActiveIndex` returns -1 when no nav item matches. It used to fall back
+  to Home, which marked a link `aria-current="page"` on the error page and
+  told a screen reader the 404 was the homepage.
+
+### Why there is only one skeleton
+
+`CollectionGridSkeleton` is the only one, and only `/collection` uses it, as
+the fallback of the Suspense boundary around the filtered results.
+
+A `loading.tsx` on a **prerendered** route is actively harmful, and this was
+measured rather than assumed. It wraps a Suspense boundary around HTML that
+was already finished, so the served document holds the skeleton in place and
+the real content in a `<div hidden id="S:0">` at the end of the body, waiting
+for an inline script to move it. The page's own JSON-LD ends up inside that
+hidden div. Anything that does not run scripts sees a page of grey boxes and
+no structured data. Four `loading.tsx` files were written and then deleted for
+exactly this reason; `/collection` keeps its inner boundary because it is
+genuinely dynamic, and its heading, filter bar and JSON-LD stay outside it.
+
+The skeleton reserves the same space as the real grid, is announced once
+(`role="status"`, shapes `aria-hidden`) rather than as twenty empty boxes, and
+its pulse stops under `motion-reduce` while the layout stays reserved.
+
+## Performance and accessibility (Fase 10)
+
+Measured on a production build (`next build && next start`), not estimated.
+
+### Images
+
+| Asset | Before | After |
+|---|---|---|
+| Hero carousel card (×14) | 125 KB JPEG, 1400×2000 raw | 20.4 KB AVIF at 640w |
+| Header/footer mark, every page | 277 KB PNG | 2.2 KB AVIF |
+| Homepage about photograph | 110 KB JPEG | 41 KB AVIF |
+
+The carousel was the worst of it: fourteen `<img>` tags serving 1400px
+photographs into ~300px cards in the first viewport, about 1.7 MB. They now go
+through `next/image` with explicit dimensions (not `fill` — a filled image
+needs a positioned parent, which a 3D-transformed grid cell is not) and
+`sizes`, which is what decides the encoded width.
+
+**React 19 emits a `rel=preload` for every non-lazy image it renders on the
+server.** Marking all fourteen `loading="eager"` put fourteen high-priority
+image fetches in the head; the homepage had 21 image preloads. Only the front
+four are `priority` now, the rest are lazy, and all fourteen still load — 5
+preloads.
+
+### JavaScript
+
+| Route | Initial JS (gzipped) |
+|---|---|
+| `/` | 257 KB |
+| `/collection` | 249 KB |
+| `/journal`, `/about`, detail routes | ~250 KB |
+
+`@paper-design/shaders-react` is the only WebGL dependency and the only thing
+worth splitting: a 54 KB chunk for `LiquidMetalButton`, which appears five
+screens down the homepage. It is now a `next/dynamic` import gated on
+`useInView`, so the chunk is not requested until the button is within 300px of
+the viewport, and the ring paints flat in the shader's base colour from the
+first frame — which is also what anyone without a WebGL context now sees,
+instead of a bare white pill.
+
+The remaining ~250 KB is React, the Next runtime and framer-motion, which
+drives reveals, the header and both carousels.
+
+### HTML and headers
+
+Documents are 14–21 KB gzipped. One stylesheet (12 KB gzipped), three font
+preloads, `display: swap` on both faces. Static chunks answer
+`max-age=31536000, immutable`; ISR pages `s-maxage=3600,
+stale-while-revalidate`; no `X-Powered-By`.
+
+### Contrast
+
+Measured, not eyeballed:
+
+| | cool-white | pure-white | soft-grey |
+|---|---|---|---|
+| graphite | 16.26 | 17.47 | 14.84 |
+| slate | 4.68 | 5.03 | **4.27** |
+| navy | 13.50 | 14.51 | 12.33 |
+
+Graphite on cool-white passes AAA at any size. Slate on soft-grey is the one
+pairing under AA, and the note in `globals.css` says to use graphite for
+secondary text in a soft-grey band.
+
+Non-text contrast (WCAG 1.4.11, 3:1 for anything identifying a control) is a
+separate measurement, and `border-grey` fails it at 1.26:1. Dividers and card
+edges stay `border-grey` — a rule between two paragraphs conveys nothing a
+reader needs to perceive — but form controls now use a new
+`--color-border-strong` (`#7e868d`, 3.44:1 on cool-white), and focus adds a
+ring rather than only darkening the border by a pixel.
+
+### Accessibility fixes made in this phase
+
+- Every page: exactly one `h1`, no skipped heading levels, verified from the
+  served HTML. Collection cards became `h2` (styled at h3 size) — they sit
+  directly under the page `h1` with no section heading between.
+- `GooeySearch` had `outline: none` on a focusable pill and its input, so
+  keyboard focus was invisible. Focus rings are drawn at a 3px offset in navy,
+  measured against the cool-white page behind the pill rather than the
+  graphite pill itself.
+- Its input is now `type="search"` with `role="combobox"`,
+  `aria-controls`/`aria-expanded` wired to the results listbox. Result chips
+  answer Space as well as Enter.
+- Footer nav links measured 38×18 at 375px. Each is its own 44px row now; the
+  pitch replaces the gap, so the column reads the same.
+- `prefers-reduced-motion` is honoured by all 25 animated components. CSS
+  cannot stop a `requestAnimationFrame` loop or a WebGL shader, so those use
+  `useReducedMotion()` — the shader is set to speed 0, which still paints.
+- No horizontal scroll at 375px: `document.documentElement.scrollWidth` is
+  375, and `window.scrollX` stays 0 after `scrollTo({left: 500})`.
+
+### What was not verified, and how to
+
+- **Lighthouse was not run.** It needs a Chromium-based browser and this
+  machine has only Safari; downloading a ~170 MB browser binary was not
+  something to do unasked. Run it yourself:
+
+  ```bash
+  npx -y lighthouse http://localhost:3100 --view --preset=desktop
+  ```
+
+- **Only the Chromium-based in-app browser was tested.** Firefox, Safari and
+  Edge were not. The CSS in the production bundle uses `:has()`, `@property`
+  (69 declarations, Tailwind v4's own, guarded by `@supports`), `color-mix()`,
+  `oklab()`, `dvh`, `overflow-x: clip` and `tan()` in a transform, which puts
+  the floor at roughly **Chrome/Edge 111+, Safari 16.4+, Firefox 128+** — all
+  mid-2024 or earlier. `backdrop-filter` ships with its `-webkit-` prefix.
+- **Motion is still unverifiable in the preview pane**, which reports
+  `visibilityState: "hidden"` and so freezes `requestAnimationFrame`,
+  IntersectionObserver, ResizeObserver and Suspense hydration. Carousel
+  rotation, the shader, the count-up and the filter-bar pending hairline were
+  reviewed in code, not watched. Filter clicks were verified by URL — every
+  combination returns correctly filtered HTML — rather than by clicking, since
+  the frozen pane lays interactive elements out at 0×0.
+
+### What was verified end to end
+
+- Insert a timepiece straight into Postgres → `/collection` reports 13,
+  `?brand=Probe` reports "1 of 13"; delete it → back to 12. No rebuild.
+- Change `PageContent` rows → the homepage's About headline and the About
+  page's Vision headline both follow.
+- Write `seo.description` in Settings → it becomes the homepage's meta
+  description. Clear `social.youtube` → the card disappears and no
+  youtube.com link remains.
+- Force a render failure → the 500 page renders with digest `207304744`, and
+  that same digest appears in the server log.
 
 ## Note on location
 

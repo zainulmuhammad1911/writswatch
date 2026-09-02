@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { ApiError, guard, handler, jsonBody, ok, pagination } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
+import { revalidateArticle } from "@/lib/revalidate";
 import { articleQuerySchema, createArticleSchema } from "@/lib/validation";
 
 /**
@@ -113,6 +114,8 @@ export const POST = handler(async (request: NextRequest) => {
     },
     request,
   });
+
+  revalidateArticle(created.slug);
 
   return ok(created, 201);
 });

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { guard, handler, jsonBody, ok } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
+import { revalidateEverything } from "@/lib/revalidate";
 import { updateSettingsSchema } from "@/lib/validation";
 
 /**
@@ -53,6 +54,9 @@ export const PUT = handler(async (request: NextRequest) => {
     details: { keys: settings.map((s) => s.key) },
     request,
   });
+
+  // Site name, socials and SEO defaults appear on every page.
+  revalidateEverything();
 
   return ok({ updated: saved.length, settings: saved });
 });

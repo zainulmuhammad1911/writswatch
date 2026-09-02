@@ -4,13 +4,22 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { TimepieceGallery } from "@/components/public/TimepieceGallery";
 import { Reveal } from "@/components/ui/Reveal";
+import { getSiteSettings } from "@/lib/content";
 import {
   eraOf,
   getTimepieceBySlug,
   getTimepieceNeighbours,
   getTimepieces,
 } from "@/lib/queries";
+import {
+  JsonLd,
+  breadcrumbJsonLd,
+  clamp,
+  pageMetadata,
+  timepieceJsonLd,
+} from "@/lib/seo";
 import type { Timepiece } from "@/types";
+import { primaryImage } from "@/types";
 
 export async function generateStaticParams() {
   const timepieces = await getTimepieces();
@@ -22,11 +31,31 @@ export async function generateMetadata({
 }: PageProps<"/collection/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const timepiece = await getTimepieceBySlug(slug);
-  if (!timepiece) return { title: "Not found" };
-  return {
+  // `notFound()` in the page below turns this into a 404. The metadata only
+  // has to avoid claiming a title the page will not render.
+  if (!timepiece) return { title: "Not found", robots: { index: false } };
+
+  const image = primaryImage(timepiece);
+  const year = timepiece.year ? `, ${timepiece.year}` : "";
+  return await pageMetadata({
     title: `${timepiece.brand} ${timepiece.model}`,
-    description: timepiece.description,
-  };
+    description:
+      clamp(timepiece.description) ??
+      // Falls back to the record rather than a template: brand, model, year
+      // and reference are the four things somebody searching would type.
+      clamp(
+        [
+          `${timepiece.brand} ${timepiece.model}${year}`,
+          timepiece.referenceNumber && `reference ${timepiece.referenceNumber}`,
+          timepiece.movement,
+        ]
+          .filter(Boolean)
+          .join(". ")
+      ),
+    path: `/collection/${timepiece.slug}`,
+    image: image?.src,
+    imageAlt: image?.alt,
+  });
 }
 
 function specifications(timepiece: Timepiece) {
@@ -49,13 +78,25 @@ export default async function TimepieceDetailPage({
   const timepiece = await getTimepieceBySlug(slug);
   if (!timepiece) notFound();
 
-  const { previous, next } = await getTimepieceNeighbours(slug);
+  const [{ previous, next }, settings] = await Promise.all([
+    getTimepieceNeighbours(slug),
+    getSiteSettings(),
+  ]);
   const name = `${timepiece.brand} ${timepiece.model}`;
   const specs = specifications(timepiece);
   const paragraphs = timepiece.story?.split("\n\n").filter(Boolean) ?? [];
 
   return (
     <>
+      <JsonLd data={timepieceJsonLd(timepiece, settings)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: settings.title, path: "/" },
+          { name: "The Collection", path: "/collection" },
+          { name, path: `/collection/${timepiece.slug}` },
+        ])}
+      />
+
       <div className="shell pt-section-sm md:pt-section">
         <Link
           href="/collection"

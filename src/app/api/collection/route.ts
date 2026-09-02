@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { guard, handler, jsonBody, ok, pagination } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
+import { revalidateTimepiece } from "@/lib/revalidate";
 import { createTimepieceSchema, timepieceQuerySchema } from "@/lib/validation";
 
 /**
@@ -104,6 +105,8 @@ export const POST = handler(async (request: NextRequest) => {
     details: { slug: created.slug, brand: created.brand, model: created.model },
     request,
   });
+
+  revalidateTimepiece(created.slug);
 
   return ok(created, 201);
 });

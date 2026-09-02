@@ -5,30 +5,62 @@ import { ArrowRight } from "lucide-react";
 import { AboutToc } from "@/components/public/AboutToc";
 import { AnimatedLinkButton } from "@/components/ui/AnimatedButton";
 import { Reveal } from "@/components/ui/Reveal";
-import { aboutIntro, aboutSections } from "@/content/about";
+import { getSiteSettings } from "@/lib/content";
+import { getAboutContent } from "@/lib/queries";
+import { JsonLd, absolute, clamp, pageMetadata } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = {
-  title: "About",
-  description: aboutIntro.lede,
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { header } = await getAboutContent();
+  return pageMetadata({
+    title: header.headline,
+    description: clamp(header.lede),
+    path: "/about",
+  });
+}
 
-const tocItems = aboutSections.map(({ id, number, navLabel }) => ({
-  id,
-  number,
-  navLabel,
-}));
+export default async function AboutPage() {
+  const [{ header, sections }, settings] = await Promise.all([
+    getAboutContent(),
+    getSiteSettings(),
+  ]);
 
-export default function AboutPage() {
+  const tocItems = sections.map(({ id, number, navLabel }) => ({
+    id,
+    number,
+    navLabel,
+  }));
+
   return (
     <>
+      {/* An "about us" page maps onto AboutPage, and its subject is the
+          museum declared on the homepage. */}
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "AboutPage",
+          url: absolute("/about"),
+          name: `${header.headline} — ${settings.title}`,
+          description: header.lede,
+          mainEntity: { "@id": `${absolute("/")}#museum` },
+          // The six sections, so a crawler can see the page's structure
+          // without parsing the prose.
+          hasPart: sections.map((section) => ({
+            "@type": "WebPageElement",
+            name: section.title,
+            headline: section.headline,
+            url: `${absolute("/about")}#${section.id}`,
+          })),
+        }}
+      />
+
       <header className="shell pt-section-sm pb-section-sm md:pt-section lg:pb-section">
         <Reveal>
           <h1 className="text-display text-graphite uppercase">
-            {aboutIntro.headline}
+            {header.headline}
           </h1>
           <p className="measure mt-7 text-h3 font-sans text-slate">
-            {aboutIntro.lede}
+            {header.lede}
           </p>
         </Reveal>
       </header>
@@ -40,7 +72,7 @@ export default function AboutPage() {
           </div>
 
           <div>
-            {aboutSections.map((section, index) => {
+            {sections.map((section, index) => {
               // Photo and text swap sides each section so the page has a
               // rhythm rather than a single column of images down one edge.
               const photoFirst = index % 2 === 1;

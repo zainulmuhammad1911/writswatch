@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { ArticleBody } from "@/components/public/ArticleBody";
 import { Reveal } from "@/components/ui/Reveal";
+import { getSiteSettings } from "@/lib/content";
 import {
   CATEGORY_LABELS,
   formatArticleDate,
@@ -12,6 +13,13 @@ import {
   getArticles,
   getRelatedArticles,
 } from "@/lib/queries";
+import {
+  JsonLd,
+  articleJsonLd,
+  breadcrumbJsonLd,
+  clamp,
+  pageMetadata,
+} from "@/lib/seo";
 
 export async function generateStaticParams() {
   const articles = await getArticles();
@@ -23,16 +31,26 @@ export async function generateMetadata({
 }: PageProps<"/journal/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const article = await getArticleBySlug(slug);
-  if (!article) return { title: "Not found" };
-  return {
+  if (!article) return { title: "Not found", robots: { index: false } };
+
+  const metadata = await pageMetadata({
     title: article.title,
-    description: article.excerpt,
+    // The excerpt is written to be read on the listing page, which makes it
+    // already the right length and tone for a search result.
+    description: clamp(article.excerpt) ?? clamp(article.content),
+    path: `/journal/${article.slug}`,
+    image: article.coverImage,
+    imageAlt: article.coverImageAlt,
+    type: "article",
+  });
+  return {
+    ...metadata,
     openGraph: {
+      ...metadata.openGraph,
+      // `publishedTime` belongs to og:article and nothing else, so the type
+      // has to be restated here for TypeScript to accept it.
       type: "article",
-      title: article.title,
-      description: article.excerpt,
       publishedTime: article.publishedAt,
-      images: article.coverImage ? [article.coverImage] : undefined,
     },
   };
 }
@@ -49,10 +67,22 @@ export default async function ArticlePage({
   const article = await getArticleBySlug(slug);
   if (!article) notFound();
 
-  const related = await getRelatedArticles(slug, 3);
+  const [related, settings] = await Promise.all([
+    getRelatedArticles(slug, 3),
+    getSiteSettings(),
+  ]);
 
   return (
     <>
+      <JsonLd data={articleJsonLd(article, settings)} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: settings.title, path: "/" },
+          { name: "Journal", path: "/journal" },
+          { name: article.title, path: `/journal/${article.slug}` },
+        ])}
+      />
+
       <div className="shell pt-section-sm md:pt-section">
         <Link
           href="/journal"

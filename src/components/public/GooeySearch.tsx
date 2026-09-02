@@ -252,7 +252,12 @@ export function GooeySearch({
       ref={rootRef}
       className={cn("relative inline-flex items-center justify-center", className)}
     >
-      <style>{`.gooey-search-loading { animation: gooeySearchSpin 0.5s linear infinite; transform-origin: center center; } @keyframes gooeySearchSpin { to { transform: rotate(180deg); } } @media (prefers-reduced-motion: reduce) { .gooey-search-loading { animation-duration: 2s; } } .gooey-search-input::placeholder { color: #F5F7F8; opacity: 0.55; }`}</style>
+      {/* Focus rings, written here rather than as utilities because the pill
+          and the result chips carry inline styles from the animation and set
+          `outline: none`. Navy at a 3px offset, so the ring sits outside the
+          graphite pill and is measured against the cool-white page behind it
+          (13.5:1) rather than against the dark pill it surrounds. */}
+      <style>{`.gooey-search-loading { animation: gooeySearchSpin 0.5s linear infinite; transform-origin: center center; } @keyframes gooeySearchSpin { to { transform: rotate(180deg); } } @media (prefers-reduced-motion: reduce) { .gooey-search-loading { animation-duration: 2s; } } .gooey-search-input::placeholder { color: #F5F7F8; opacity: 0.55; } .gooey-search-shell:focus-visible, .gooey-search-shell:has(:focus-visible), .gooey-search-option:focus-visible { outline: 2px solid #162B3D; outline-offset: 3px; border-radius: 9999px; }`}</style>
       <svg
         aria-hidden="true"
         style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
@@ -281,6 +286,7 @@ export function GooeySearch({
         <AnimatePresence mode="popLayout">
           <motion.div
             key="results-wrapper"
+            id="gooey-search-results"
             role="listbox"
             aria-label="Search results"
             style={{ position: "relative", zIndex: -1 }}
@@ -291,11 +297,19 @@ export function GooeySearch({
               {results.map((item, index) => (
                 <motion.div
                   key={item}
+                  className="gooey-search-option"
                   role="option"
                   aria-selected={false}
                   tabIndex={0}
                   onClick={() => onSelect?.(item)}
-                  onKeyDown={(e) => e.key === "Enter" && onSelect?.(item)}
+                  onKeyDown={(e) => {
+                    // Space as well as Enter: the chips behave like buttons,
+                    // and a keyboard user will try both.
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelect?.(item);
+                    }
+                  }}
                   whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
                   variants={getResultVariants(index, isUnsupported)}
                   initial="initial"
@@ -344,6 +358,7 @@ export function GooeySearch({
           }}
           whileHover={{ scale: step === 2 ? 1 : 1.05 }}
           whileTap={{ scale: 0.95 }}
+          className="gooey-search-shell"
           role={step === 1 ? "button" : undefined}
           tabIndex={step === 1 ? 0 : undefined}
           aria-label={step === 1 ? "Open search" : undefined}
@@ -377,10 +392,19 @@ export function GooeySearch({
           ) : (
             <input
               ref={inputRef}
-              type="text"
+              // `search`, so mobile keyboards offer a search key and the
+              // browser treats it as one. `combobox` plus aria-controls is
+              // what connects the field to the listbox below it; without the
+              // pairing a screen reader announces results nobody asked for.
+              type="search"
+              role="combobox"
+              aria-expanded={results.length > 0}
+              aria-controls="gooey-search-results"
+              aria-autocomplete="list"
+              autoComplete="off"
               className="gooey-search-input"
               placeholder={placeholder}
-              aria-label="Search input"
+              aria-label={placeholder.replace(/\.{3}$|…$/, "")}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               style={{

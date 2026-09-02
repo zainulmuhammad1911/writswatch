@@ -7,29 +7,61 @@ import { Reveal } from "@/components/ui/Reveal";
 import {
   CATEGORY_LABELS,
   formatArticleDate,
-  getArchiveItems,
   getFeaturedArticle,
+  getJournalContent,
   getStoryArticles,
-  pageContent,
 } from "@/lib/queries";
+import { JsonLd, absolute, clamp, pageMetadata } from "@/lib/seo";
 
-const { headline, subhead, description, heroImage, heroImageAlt, archive, cta } =
-  pageContent.journal;
-
-export const metadata: Metadata = {
-  title: "Journal",
-  description,
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { headline, description, heroImage } = await getJournalContent();
+  return pageMetadata({
+    title: headline,
+    description: clamp(description),
+    path: "/journal",
+    image: heroImage,
+  });
+}
 
 export default async function JournalPage() {
-  const [featuredArticle, storyArticles, archiveItems] = await Promise.all([
+  const [content, featuredArticle, storyArticles] = await Promise.all([
+    getJournalContent(),
     getFeaturedArticle(),
     getStoryArticles(),
-    getArchiveItems(),
   ]);
+  const {
+    headline,
+    subhead,
+    description,
+    heroImage,
+    heroImageAlt,
+    archive,
+    cta,
+  } = content;
+  const articles = [featuredArticle, ...storyArticles].filter(
+    (article): article is NonNullable<typeof article> => Boolean(article)
+  );
 
   return (
     <>
+      {/* The journal as a list of its articles, in the order they are shown. */}
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "Blog",
+          "@id": `${absolute("/journal")}#blog`,
+          url: absolute("/journal"),
+          name: `${headline} — ${subhead}`,
+          description,
+          blogPost: articles.map((article) => ({
+            "@type": "BlogPosting",
+            url: absolute(`/journal/${article.slug}`),
+            headline: article.title,
+            datePublished: article.publishedAt,
+          })),
+        }}
+      />
+
       {/* ---------------------------------------------------------------- */}
       {/* HERO                                                             */}
       {/* ---------------------------------------------------------------- */}
@@ -187,7 +219,7 @@ export default async function JournalPage() {
 
         <Reveal delay={0.08}>
           <ul className="mt-14 grid grid-cols-1 gap-x-8 gap-y-12 sm:grid-cols-2 lg:mt-20 lg:gap-y-16">
-            {archiveItems.map((item) => (
+            {archive.items.map((item) => (
               <li key={item.id}>
                 <div className="relative aspect-[3/2] w-full overflow-hidden border border-border-grey bg-soft-grey">
                   <Image

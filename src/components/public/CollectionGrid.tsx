@@ -102,9 +102,12 @@ export function CollectionGrid({
             </div>
 
             <div className="pt-5">
-              <h3 className="font-display text-h3 leading-none text-graphite">
+              {/* h2: the card titles sit directly under the page's h1, with
+                  no section heading between them. Styled at h3 size, which is
+                  a visual decision and not a document-outline one. */}
+              <h2 className="font-display text-h3 leading-none text-graphite">
                 {item.brand.toUpperCase()}
-              </h3>
+              </h2>
               <p className="mt-2 text-body text-slate transition-colors duration-base group-hover:text-graphite">
                 {item.model}
               </p>

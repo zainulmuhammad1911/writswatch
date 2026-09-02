@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { animate, useReducedMotion } from "framer-motion";
@@ -32,13 +33,20 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "About", href: "/about" },
 ];
 
-/** `/collection/submariner-5513` should still light up "Collection". */
+/**
+ * `/collection/submariner-5513` should still light up "Collection".
+ *
+ * Returns -1 when the path belongs to no nav item, which is what happens on a
+ * 404. Falling back to Home there marks the current page `aria-current="page"`
+ * on a link that does not lead to it, and tells a screen reader the error page
+ * is the homepage.
+ */
 export function getActiveIndex(pathname: string, items: NavItem[]): number {
   const index = items.findIndex(
     (item) => item.href !== "/" && pathname.startsWith(item.href)
   );
   if (index !== -1) return index;
-  return items.findIndex((item) => item.href === "/");
+  return pathname === "/" ? items.findIndex((item) => item.href === "/") : -1;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -222,13 +230,16 @@ function Wordmark({ className }: { className?: string }) {
         className
       )}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element -- a fixed-size
-          mark; next/image adds a wrapper and a request for no gain here. */}
-      <img
+      {/* Through next/image, which is not decoration here: the source PNG is
+          277KB and the mark renders at 44-56px. Optimised it is a couple of
+          kilobytes of AVIF, and it is in the header of every page. */}
+      <Image
         src="/images/logo.png"
         alt=""
         width={56}
         height={56}
+        sizes="56px"
+        priority
         className="h-11 w-auto shrink-0 lg:h-14"
       />
       <span

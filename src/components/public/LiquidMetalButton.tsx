@@ -1,10 +1,27 @@
 "use client";
 
-import React, { forwardRef, memo } from "react";
+import React, { forwardRef, memo, useRef } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { LiquidMetal as LiquidMetalShader } from "@paper-design/shaders-react";
-import { useReducedMotion } from "framer-motion";
+import { useInView, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+
+/**
+ * The shader, split out of the initial bundle.
+ *
+ * `@paper-design/shaders-react` is a 54KB chunk (gzipped: ~17KB) and it is the
+ * only WebGL dependency in the project. Every use of this button is below the
+ * fold — the homepage CTA sits five screens down — so shipping it with the
+ * first paint bought nothing. `ssr: false` because a server-rendered WebGL
+ * canvas is an empty element either way.
+ */
+const LiquidMetalShader = dynamic(
+  () =>
+    import("@paper-design/shaders-react").then((module) => ({
+      default: module.LiquidMetal,
+    })),
+  { ssr: false }
+);
 
 export interface LiquidMetalProps {
   colorBack?: string;
@@ -31,11 +48,22 @@ export const LiquidMetal = memo(function LiquidMetal({
   // speed 0 still paints the border — it simply stops moving.
   const prefersReducedMotion = useReducedMotion();
 
+  // The chunk is not even requested until the button is within 300px of the
+  // viewport. `once`, so scrolling back past it does not re-trigger.
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "300px" });
+
   return (
     <div
+      ref={ref}
       className={cn("absolute inset-0 z-0 overflow-hidden", className)}
-      style={style}
+      // The ring is painted flat in the shader's own base colour from the
+      // first frame. Without it the button would show a bare white pill until
+      // the chunk arrived, and would stay that way for anyone whose browser
+      // cannot give it a WebGL context.
+      style={{ backgroundColor: colorBack, ...style }}
     >
+      {inView && (
       <LiquidMetalShader
         colorBack={colorBack}
         colorTint={colorTint}
@@ -51,6 +79,7 @@ export const LiquidMetal = memo(function LiquidMetal({
         fit="cover"
         style={{ width: "100%", height: "100%" }}
       />
+      )}
     </div>
   );
 });

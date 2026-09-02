@@ -19,6 +19,7 @@ const twMerge = extendTailwindMerge({
         "navy",
         "navy-dark",
         "border-grey",
+        "border-strong",
         "success",
         "warning",
         "danger",

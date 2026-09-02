@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -94,13 +95,32 @@ export const CylinderCarousel = React.forwardRef<
           }}
         >
           {images.map((img, i) => (
-            // next/image cannot be measured inside a 3D-transformed grid
-            // cell; these are hero assets served straight from /public.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            /**
+             * next/image, with explicit dimensions rather than `fill` — a
+             * filled image needs a positioned parent it can be measured
+             * against, which a 3D-transformed grid cell is not. The width and
+             * height props are the intrinsic ratio; CSS still sizes the card.
+             *
+             * This matters more here than anywhere else on the site. The
+             * source photographs are 1400x2000 and the cards render around
+             * 300px wide, so served raw they were roughly five times the
+             * pixels needed, fourteen times over, in the first viewport.
+             * `sizes` is what tells Next which width to actually encode.
+             */
+            <Image
               key={i}
               src={img.src}
               alt={img.alt || `Timepiece ${i + 1}`}
+              width={cardWidth}
+              height={Math.round((cardWidth * 10) / 7)}
+              sizes={`${cardWidth}px`}
+              // The front four are the homepage's largest paintable element,
+              // so they get a preload hint. The rest stay lazy, which is what
+              // keeps them out of the preload list: React 19 emits a
+              // `rel=preload` for every non-lazy image it renders on the
+              // server, so marking all fourteen eager put fourteen
+              // high-priority image fetches in the head.
+              priority={i < 4}
               draggable={false}
               className={cn(
                 "rounded-md object-cover [backface-visibility:hidden] [grid-area:1/1]",
@@ -109,6 +129,7 @@ export const CylinderCarousel = React.forwardRef<
               style={
                 {
                   width: "var(--w)",
+                  height: "auto",
                   aspectRatio: "7/10",
                   "--i": i,
                   transform:

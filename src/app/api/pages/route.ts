@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { guard, handler, jsonBody, ok } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
+import { revalidate } from "@/lib/revalidate";
 import { pageQuerySchema, updatePageContentSchema } from "@/lib/validation";
 
 /**
@@ -84,6 +85,18 @@ export const PUT = handler(async (request: NextRequest) => {
     },
     request,
   });
+
+  // Every page the batch touched. The homepage is always included: it quotes
+  // the about section, so an edit to `about` shows up in two places.
+  revalidate(
+    "/",
+    ...new Set(
+      entries
+        .map((entry) => entry.page)
+        .filter((page) => page !== "home")
+        .map((page) => `/${page}`)
+    )
+  );
 
   return ok({ updated: saved.length, entries: saved });
 });

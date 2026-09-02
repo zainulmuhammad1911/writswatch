@@ -1,39 +1,104 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { CollectionBrowser } from "@/components/public/CollectionBrowser";
+import { CollectionFilterBar } from "@/components/public/CollectionFilterBar";
+import { CollectionResults } from "@/components/public/CollectionResults";
+import { CollectionGridSkeleton } from "@/components/public/Skeleton";
 import { Reveal } from "@/components/ui/Reveal";
-import { getCollectionFacets, getTimepieces, pageContent } from "@/lib/queries";
+import {
+  getCollectionContent,
+  getCollectionFacets,
+  getTimepieces,
+} from "@/lib/queries";
+import {
+  JsonLd,
+  clamp,
+  collectionJsonLd,
+  pageMetadata,
+} from "@/lib/seo";
 
-const { headline, description } = pageContent.collection;
+export async function generateMetadata(): Promise<Metadata> {
+  const { headline, description } = await getCollectionContent();
+  return pageMetadata({
+    title: headline,
+    description: clamp(description),
+    // Canonical without the query string. `?brand=Rolex` is a view of this
+    // page, not a page of its own, and every one of them should consolidate
+    // here rather than competing with it in the index.
+    path: "/collection",
+  });
+}
 
-export const metadata: Metadata = {
-  title: "The Collection",
-  description,
-};
-
-export default async function CollectionPage() {
-  const [timepieces, facets] = await Promise.all([
-    getTimepieces(),
+/**
+ * The collection listing.
+ *
+ * The header and the filter bar render immediately; the grid arrives inside a
+ * Suspense boundary, because it is the only part that has to wait for a
+ * filtered query. `searchParams` is deliberately not awaited here — it is
+ * handed to `CollectionResults` still as a promise, which is what keeps the
+ * shell out of the wait.
+ */
+export default async function CollectionPage({
+  searchParams,
+}: PageProps<"/collection">) {
+  const [content, facets, all] = await Promise.all([
+    getCollectionContent(),
     getCollectionFacets(),
+    getTimepieces(),
   ]);
 
   return (
     <>
+      <JsonLd
+        data={collectionJsonLd({
+          headline: content.headline,
+          description: content.description,
+          timepieces: all,
+        })}
+      />
+
       <header className="shell pt-section-sm pb-12 md:pt-section lg:pb-16">
         <Reveal>
-          <h1 className="text-display text-graphite uppercase">{headline}</h1>
+          <h1 className="text-display text-graphite uppercase">
+            {content.headline}
+          </h1>
           <p className="measure mt-7 text-h3 font-sans text-slate">
-            {description}
+            {content.description}
           </p>
         </Reveal>
       </header>
 
-      {/* CollectionBrowser reads useSearchParams, so it needs a Suspense
-          boundary to stay statically prerenderable. */}
+      {/* CollectionFilterBar reads useSearchParams, so it needs a Suspense
+          boundary to stay prerenderable. */}
       <Suspense
-        fallback={<div className="shell py-24 text-small text-slate">Loading…</div>}
+        fallback={
+          // Same wrapper and same control height as the real bar, so the
+          // swap is invisible rather than a jump.
+          <div className="border-y border-border-grey">
+            <div className="shell flex flex-col gap-6 py-6 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
+              <div aria-hidden="true" className="h-11 w-64 max-w-full" />
+              <div aria-hidden="true" className="h-11 w-44" />
+            </div>
+          </div>
+        }
       >
-        <CollectionBrowser timepieces={timepieces} facets={facets} />
+        <CollectionFilterBar
+          facets={facets}
+          searchItems={all.map((timepiece) => ({
+            label: `${timepiece.brand} ${timepiece.model}`,
+            href: `/collection/${timepiece.slug}`,
+          }))}
+        />
+      </Suspense>
+
+      <Suspense
+        fallback={
+          <CollectionGridSkeleton
+            count={Math.min(all.length, 6)}
+            className="shell pt-10 pb-section-sm md:pb-section lg:pb-section-lg"
+          />
+        }
+      >
+        <CollectionResults searchParams={searchParams} />
       </Suspense>
     </>
   );

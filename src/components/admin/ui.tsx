@@ -236,8 +236,14 @@ export function Badge({
 /*  Form fields                                                               */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * `border-strong`, not `border-grey`: the border is the only thing that shows
+ * where the field is, and WCAG 1.4.11 asks for 3:1 on anything that does that
+ * job. Focus adds a ring as well as darkening the border, because a 1px colour
+ * change on its own is a weak focus indicator.
+ */
 export const inputClasses =
-  "min-h-11 w-full border border-border-grey bg-pure-white px-3 text-small text-graphite transition-colors duration-fast focus-visible:border-navy focus-visible:outline-none disabled:bg-cool-white disabled:text-slate";
+  "min-h-11 w-full border border-border-strong bg-pure-white px-3 text-small text-graphite transition-colors duration-fast focus-visible:border-navy focus-visible:ring-2 focus-visible:ring-navy focus-visible:outline-none disabled:border-border-grey disabled:bg-cool-white disabled:text-slate";
 
 export const textareaClasses = cn(inputClasses, "min-h-32 py-2.5 leading-[1.6]");
 

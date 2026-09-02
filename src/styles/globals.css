@@ -28,7 +28,8 @@
   --color-slate: #687078;       /* Secondary text — captions, metadata, year */
   --color-navy: #162b3d;        /* Accent — CTA, active nav, links, rules    */
   --color-navy-dark: #0d1e2b;   /* Accent hover / pressed                    */
-  --color-border-grey: #d9dee2; /* Border — dividers, card edges, inputs     */
+  --color-border-grey: #d9dee2; /* Border — dividers, card edges             */
+  --color-border-strong: #7e868d; /* Border — form controls (see note below) */
 
   /* Status colours, added for the admin dashboard in Fase 9. The public site
      uses none of these: a museum page has no success or danger states. Muted
@@ -43,7 +44,16 @@
        navy     on cool-white  13.5:1   slate    on pure-white  5.0:1
        slate    on cool-white   4.7:1   slate    on soft-grey   4.3:1  <- FAILS
      Slate on soft-grey is the one pairing to watch. In a soft-grey band, set
-     secondary text in graphite (or size it 18.66px+/bold) instead of slate. */
+     secondary text in graphite (or size it 18.66px+/bold) instead of slate.
+
+     Non-text contrast (WCAG 1.4.11 needs 3:1 for anything that identifies a
+     control) is a separate measurement, and border-grey does not meet it:
+       border-grey    on cool-white  1.3:1   <- decorative only
+       border-strong  on cool-white  3.4:1   border-strong on pure-white 3.7:1
+     Dividers and card edges are decoration and stay border-grey, because a
+     rule between two paragraphs conveys nothing a reader needs to perceive.
+     The edge of an input is different: it is the only thing showing where the
+     field is, so form controls use border-strong. */
 
   /* ---------------------------------------------------------------------------
      TYPOGRAPHY
@@ -388,6 +398,14 @@
 
 /* GlowBorderCard — a conic gradient rotated by an animatable custom property.
    @property is what makes the angle interpolate instead of snapping. */
+/* Collection filter bar: a hairline sweeping left to right while the
+   server-filtered results are in flight. */
+@keyframes iwm-filter-progress {
+  0%   { transform: scaleX(0); opacity: 0.6; }
+  60%  { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+
 @property --iwm-glow-angle {
   syntax: "<angle>";
   initial-value: 0deg;

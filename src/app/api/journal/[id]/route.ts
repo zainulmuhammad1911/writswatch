@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { ApiError, guard, handler, jsonBody, ok } from "@/lib/api";
 import { audit, changedFields } from "@/lib/audit";
 import { requireDb } from "@/lib/db";
+import { revalidateArticle } from "@/lib/revalidate";
 import { updateArticleSchema } from "@/lib/validation";
 
 /**
@@ -101,6 +102,10 @@ export const PUT = handler(
       request,
     });
 
+    // Both slugs: a rename leaves a cached page at the old address.
+    revalidateArticle(updated.slug);
+    if (existing.slug !== updated.slug) revalidateArticle(existing.slug);
+
     return ok(updated);
   }
 );
@@ -122,6 +127,8 @@ export const DELETE = handler(
       details: { slug: existing.slug, title: existing.title },
       request,
     });
+
+    revalidateArticle(existing.slug);
 
     return ok({ id: existing.id, slug: existing.slug, deleted: true });
   }

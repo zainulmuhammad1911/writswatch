@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { motion, useReducedMotion, type Transition } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -161,7 +162,9 @@ export function PerspectiveCarousel({
                     // are reachable but stay out of the tab order so the
                     // carousel does not swallow six stops.
                     tabIndex={isActive ? 0 : -1}
-                    className="aspect-[3/4] w-full cursor-pointer rounded-md"
+                    // `relative`, so the filled image below has something to
+                    // be measured against.
+                    className="relative aspect-[3/4] w-full cursor-pointer rounded-md"
                     onClick={() => {
                       if (isActive && onItemClick) {
                         onItemClick(item, index);
@@ -170,15 +173,18 @@ export function PerspectiveCarousel({
                       }
                     }}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element --
-                        the slide is inside a 3D-transformed, spring-animated
-                        stack that next/image cannot lay out. */}
-                    <img
+                    {/* Filled rather than sized: the slide's own box is set
+                        by the 3D stack, and `sizes` is what stops a 220px
+                        card being served a 1400px photograph. Lazy on
+                        purpose — this section is four screens down. */}
+                    <Image
                       src={item.src}
                       alt={item.alt ?? item.title}
+                      fill
+                      sizes={`${safeSlideWidth}px`}
                       draggable={false}
                       className={cn(
-                        "h-full w-full rounded-md object-cover shadow-float select-none",
+                        "rounded-md object-cover shadow-float select-none",
                         imageClassName
                       )}
                     />
