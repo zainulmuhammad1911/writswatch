@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -58,8 +59,15 @@ export function AdminShell({ nav, user, children }: AdminShellProps) {
             href="/admin"
             className="flex items-center gap-3 rounded-sm focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-2 focus-visible:ring-offset-pure-white focus-visible:outline-none"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- fixed-size mark */}
-            <img src="/images/logo.png" alt="" width={34} height={34} className="h-[34px] w-auto" />
+            <Image
+              src="/images/logo.png"
+              alt=""
+              width={34}
+              height={34}
+              sizes="34px"
+              priority
+              className="h-[34px] w-auto"
+            />
             <span
               aria-hidden="true"
               className="text-[0.5625rem] leading-[1.35] font-medium tracking-[0.18em] text-graphite uppercase"

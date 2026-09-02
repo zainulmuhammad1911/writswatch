@@ -60,7 +60,11 @@ export async function generateMetadata(): Promise<Metadata> {
       follow: true,
       googleBot: { index: true, follow: true, "max-image-preview": "large" },
     },
-    icons: { icon: "/favicon.ico" },
+    // Both stated, because `icons` is one metadata field and setting it here
+    // replaces the file conventions wholesale — the same field-level override
+    // that silently dropped og:image. Without the apple entry, iOS guesses at
+    // /apple-touch-icon.png and logs a 404 on every page load.
+    icons: { icon: "/favicon.ico", apple: "/apple-icon.png" },
   };
 }
 

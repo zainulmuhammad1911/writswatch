@@ -597,6 +597,13 @@ apology in a voice the rest of the site never uses.
 - `getActiveIndex` returns -1 when no nav item matches. It used to fall back
   to Home, which marked a link `aria-current="page"` on the error page and
   told a screen reader the 404 was the homepage.
+- `app/apple-icon.png` (180x180, flattened onto cool-white because iOS
+  composites a transparent touch icon onto black) plus an `apple` entry in the
+  root `icons`. Setting `icons` in `generateMetadata` replaces the file
+  conventions wholesale — the same field-level override that dropped
+  `og:image` — so both have to be stated. Browsers still probe
+  `/apple-touch-icon.png` on their own and get a 404; that request is
+  browser-initiated and harmless, and the link tag is what real iOS uses.
 
 ### Why there is only one skeleton
 
@@ -617,6 +624,67 @@ The skeleton reserves the same space as the real grid, is announced once
 (`role="status"`, shapes `aria-hidden`) rather than as twenty empty boxes, and
 its pulse stops under `motion-reduce` while the layout stays reserved.
 
+## Content Security Policy
+
+Two policies, both built in `lib/csp.ts`.
+
+| | Routes | `script-src` |
+|---|---|---|
+| Strict | `/admin`, `/login`, `/api` (via `src/middleware.ts`) | `'self' 'nonce-…' 'strict-dynamic'` |
+| Public | everything else (via `next.config.ts`) | `'self' 'unsafe-inline'` |
+
+### Why two
+
+A nonce and a prerendered page cannot both be had. A nonce must be unique per
+response, so a page carrying one is rendered per request by definition — Next
+says as much: pages using a nonce cannot be statically generated. Putting one
+on the public site would undo the ISR work above and return
+`Cache-Control: private` on every route.
+
+So the strict policy goes where it buys something and costs nothing. The
+dashboard, the login page and the API are already rendered per request, and
+they are the surface where an injected script would matter: a session that can
+write to the database and read the audit trail. Under `strict-dynamic` the
+browser ignores `'self'` and any host list entirely and runs only what carried
+the nonce, plus what those scripts create themselves — which is how Next's
+bootstrap still loads its own chunks.
+
+The public pages keep `'unsafe-inline'` for scripts. That is a real limitation
+and worth naming rather than glossing: it is what lets Next's prerendered
+bootstrap run. What makes it defensible here is that those pages have no HTML
+injection path at all. Nothing is rendered from user input, journal bodies go
+through a block parser that emits React elements rather than markup
+(`ArticleBody`), and the one `dangerouslySetInnerHTML` is the JSON-LD, which
+is serialised through `JSON.stringify` with `<` escaped.
+
+### What else changed
+
+- **`'unsafe-eval'` is gone in production**, from both policies. Only the dev
+  overlay and React Refresh need it, so it comes back when `NODE_ENV` is not
+  production, along with the websocket HMR talks over.
+- **The Google Fonts hosts are gone.** `next/font` self-hosts every face; the
+  only thing that fetches from Google is the share-image route, on the server
+  at build time, where CSP does not apply.
+- **Added**: `frame-src 'none'`, `worker-src`, `manifest-src`, `media-src`.
+- **`style-src` keeps `'unsafe-inline'`** and will. Framer Motion animates
+  through the style attribute and the carousels compute a transform per card.
+  Style injection cannot execute script, which is what makes this the one
+  `'unsafe-inline'` worth keeping.
+
+### Two traps worth recording
+
+A response must never carry two CSP headers. Browsers enforce each policy they
+are sent independently, so two policies quietly become their intersection — so
+`next.config.ts` scopes the public policy to `/((?!admin|login|api/).*)`.
+`/api/auth/*` therefore gets no CSP at all; its responses are JSON, where the
+policy governs nothing.
+
+The nonce has to reach the renderer, not just the browser. The middleware sets
+it on the **request** headers as well as the response, and Next reads it back
+out of there to stamp its own script tags. Verified: on `/login` and every
+admin page, all 25–36 script tags carry a nonce, the document's nonce equals
+the header's, and none are bare.
+
 ## Performance and accessibility (Fase 10)
 
 Measured on a production build (`next build && next start`), not estimated.
@@ -627,6 +695,7 @@ Measured on a production build (`next build && next start`), not estimated.
 |---|---|---|
 | Hero carousel card (×14) | 125 KB JPEG, 1400×2000 raw | 20.4 KB AVIF at 640w |
 | Header/footer mark, every page | 277 KB PNG | 2.2 KB AVIF |
+| Same mark on `/login` and `/admin` | 277 KB PNG served raw | 2.2 KB AVIF |
 | Homepage about photograph | 110 KB JPEG | 41 KB AVIF |
 
 The carousel was the worst of it: fourteen `<img>` tags serving 1400px
