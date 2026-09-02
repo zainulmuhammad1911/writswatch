@@ -719,10 +719,41 @@ needs a positioned parent, which a 3D-transformed grid cell is not) and
 `sizes`, which is what decides the encoded width.
 
 **React 19 emits a `rel=preload` for every non-lazy image it renders on the
-server.** Marking all fourteen `loading="eager"` put fourteen high-priority
-image fetches in the head; the homepage had 21 image preloads. Only the front
-four are `priority` now, the rest are lazy, and all fourteen still load — 5
-preloads.
+server.** Marking all fourteen `loading="eager"` put fourteen image fetches in
+the head; the homepage had 21 image preloads. Six are `priority` now, the other
+eight are lazy, and all fourteen still load — 7 preloads including the mark.
+
+#### Which six, and why it is not the front four
+
+The first attempt preloaded indices 0–3, which was a guess, and the guess was
+wrong. Lighthouse then reported `lcp-discovery-insight` at 0: the element the
+browser was measuring LCP against was `carousel/8.jpg`, and it was lazy.
+
+So the on-screen area of every card was measured with the rotation paused at
+its rest angle:
+
+| Index | On-screen area | Was |
+|---|---|---|
+| 7 | 585,336 px² | lazy |
+| 1 | 51,677 px² | eager |
+| 13 | 51,677 px² | lazy |
+| 0 | 46,905 px² | eager |
+| 12 | 12,478 px² | lazy |
+| 2 | 7,549 px² | eager |
+| 3 | 0 px² | eager, wasted |
+| everything else | 0 px² | lazy |
+
+Index 7 sits at 180°. The card is translated toward the camera rather than away
+from it, so perspective scales it into the largest box on the page — eleven
+times the area of the card actually facing the viewer. `backface-visibility:
+hidden` means nobody can see it. Chrome measured LCP against it anyway, which
+is how an invisible photograph came to decide the homepage's LCP.
+
+`frontFacingIndices()` in `CylinderCarousel.tsx` now returns exactly the set
+with non-zero area — `{0, 1, 2, n-2, n-1, round(n/2)}` — and index 7 alone gets
+`fetchPriority="high"`. Next passes that prop through to both the `<img>` and
+the preload it emits, and a `rel=preload as=image` without it is queued at Low
+priority, so marking all six would only have put them back in a tie.
 
 ### JavaScript
 
@@ -793,13 +824,31 @@ ring rather than only darkening the border by a pixel.
 
 ### What was not verified, and how to
 
-- **Lighthouse was not run.** It needs a Chromium-based browser and this
-  machine has only Safari; downloading a ~170 MB browser binary was not
-  something to do unasked. Run it yourself:
+- **Lighthouse has only been run against `next dev`.** It needs a
+  Chromium-based browser and this machine has only Safari, so the runs were
+  done by hand, against `localhost:3000`. The report's own diagnostics give it
+  away: "Minify JavaScript, est. savings 267 KiB" and "Reduce unused
+  JavaScript, 341 KiB" are both descriptions of a dev bundle. Scores were
+  **Performance 92, Accessibility 100, Best Practices 100, SEO 92**, and the
+  performance figure should read better on a real build. Worth re-running:
 
   ```bash
-  npx -y lighthouse http://localhost:3100 --view --preset=desktop
+  npm run build && npm run start
   ```
+
+  ```bash
+  npx -y lighthouse http://localhost:3000 --view --preset=desktop
+  ```
+
+  The two findings that were real, both now fixed: `lcp-discovery-insight`
+  (see "Which six, and why it is not the front four" above) and the SEO
+  `link-text` audit, which flagged the homepage's "MORE INFORMATION" button.
+  That audit reads the **visible** text, not the accessible name, so the
+  `aria-label` that had been added for screen readers did nothing for it. The
+  label is now "About the collection" — it names its destination, differs from
+  the section eyebrow above it, and the `aria-label` is gone, since a
+  descriptive label is its own accessible name and a duplicate that does not
+  match the visible text is what WCAG 2.5.3 warns about.
 
 - **Only the Chromium-based in-app browser was tested.** Firefox, Safari and
   Edge were not. The CSS in the production bundle uses `:has()`, `@property`

@@ -413,7 +413,11 @@ export const pageContent = {
       ],
       image: "/images/about-museum.jpg",
       imageAlt: "Macro detail of a vintage wristwatch dial",
-      ctaLabel: "More Information",
+      // Not "More Information": that phrase is on the list of generic link
+      // text Lighthouse flags, and it tells a reader nothing about where the
+      // link goes. The label names the destination instead, and differs from
+      // the section eyebrow above it so the two do not read as a stutter.
+      ctaLabel: "About the collection",
       ctaHref: "/about",
     },
     collection: {

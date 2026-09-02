@@ -139,18 +139,12 @@ export default async function HomePage() {
                 </p>
               ))}
             </div>
-            {/* "More Information" says nothing to somebody tabbing through
-                links with the page read aloud, and Lighthouse flags it.
-                The accessible name adds the destination and still contains
-                the visible label, which WCAG 2.5.3 requires so a voice
-                command matching what is on screen still works. Both halves
-                come from the same content section, so an editor who renames
-                the button keeps a coherent name. */}
-            <AnimatedLinkButton
-              href={about.ctaHref}
-              aria-label={`${about.ctaLabel} — ${about.label}`}
-              className="mt-10"
-            >
+            {/* No aria-label. The visible label names the destination, so an
+                accessible name would only repeat it — and a duplicate that
+                does not match the text is exactly what WCAG 2.5.3 warns
+                about. See the note in `fixtures.ts` on why the label reads
+                the way it does. */}
+            <AnimatedLinkButton href={about.ctaHref} className="mt-10">
               {about.ctaLabel}
               <ArrowRight aria-hidden="true" className="size-4" />
             </AnimatedLinkButton>

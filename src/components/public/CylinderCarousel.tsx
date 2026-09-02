@@ -27,6 +27,37 @@ export interface CylinderCarouselProps
   cardGap?: number;
 }
 
+/**
+ * Which cards are on screen before the cylinder has turned.
+ *
+ * Two groups, and the second one is not obvious. The cards either side of 0deg
+ * are the ones facing the viewer. But the card at 180deg is translated toward
+ * the camera rather than away from it, so perspective scales it up until it is
+ * the largest box on the page — measured at 585,000px2 against 52,000px2 for
+ * the front card. It is invisible (`backface-visibility: hidden`), and the
+ * browser still nominated it as the Largest Contentful Paint element, which is
+ * how a photograph nobody can see came to decide the homepage's LCP.
+ *
+ * Rather than guess, this was measured: at rest, exactly these indices have a
+ * non-zero on-screen area. Everything else is 0 and stays lazy.
+ */
+function frontFacingIndices(count: number): Set<number> {
+  if (count <= 6) return new Set(Array.from({ length: count }, (_, i) => i));
+  return new Set([0, 1, 2, count - 1, count - 2, nearCameraIndex(count)]);
+}
+
+/**
+ * The card the browser measures LCP against, per the note above.
+ *
+ * It gets `fetchPriority="high"` and the rest do not. Next passes the prop
+ * through to both the `<img>` and the `rel=preload` it emits, and a preload
+ * without it is queued at Low priority, so marking all six would only put
+ * them back in a tie.
+ */
+function nearCameraIndex(count: number): number {
+  return count <= 6 ? 0 : Math.round(count / 2);
+}
+
 export const CylinderCarousel = React.forwardRef<
   HTMLDivElement,
   CylinderCarouselProps
@@ -52,6 +83,11 @@ export const CylinderCarousel = React.forwardRef<
     // cylinder to a near-standstill keeps the composition intact while removing
     // the movement.
     const prefersReducedMotion = useReducedMotion();
+    const onScreenAtRest = React.useMemo(
+      () => frontFacingIndices(images.length),
+      [images.length]
+    );
+    const lcpIndex = nearCameraIndex(images.length);
     const duration = prefersReducedMotion ? 0 : animationDuration;
 
     const N = images.length;
@@ -114,13 +150,14 @@ export const CylinderCarousel = React.forwardRef<
               width={cardWidth}
               height={Math.round((cardWidth * 10) / 7)}
               sizes={`${cardWidth}px`}
-              // The front four are the homepage's largest paintable element,
-              // so they get a preload hint. The rest stay lazy, which is what
+              // Preloaded only if this card is actually on screen at the
+              // animation's start angle. The rest stay lazy, which is what
               // keeps them out of the preload list: React 19 emits a
               // `rel=preload` for every non-lazy image it renders on the
               // server, so marking all fourteen eager put fourteen
               // high-priority image fetches in the head.
-              priority={i < 4}
+              priority={onScreenAtRest.has(i)}
+              fetchPriority={i === lcpIndex ? "high" : undefined}
               draggable={false}
               className={cn(
                 "rounded-md object-cover [backface-visibility:hidden] [grid-area:1/1]",
