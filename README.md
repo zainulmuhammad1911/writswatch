@@ -54,7 +54,10 @@ Then `npm run db:migrate && npm run db:seed`.
 
 ### Switching to Supabase
 
-The project is `vldpimlvjxgmwpmikuci` in `ap-northeast-1`. It needs **two**
+The project reference is in `.env`, not here: this repository is public, and
+naming it would hand a reader the exact pooler hostname and username
+(`postgres.<ref>`) to aim a password attempt at. The region is
+`ap-northeast-1`. It needs **two**
 connection strings, because the two poolers do different jobs:
 
 | Port | Mode | Used by |
