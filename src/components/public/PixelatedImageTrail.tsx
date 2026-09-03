@@ -177,13 +177,18 @@ export function PixelatedImageTrail({
         borderRadius: "8px",
         opacity: "1",
         transform: "translate3d(0, 0, 0) scale(1)",
+        // The slide is a transform, not `left`/`top`.
+        //
+        // Those two are layout properties: transitioning them makes the
+        // browser run layout, paint and composite on every frame of a 1.3s
+        // slide, for up to fourteen live trail elements at once. A transform
+        // runs on the compositor and touches neither layout nor paint. The
+        // element is placed once with left/top and never moves them again.
         transition: [
-          `left ${config.slideDuration}ms ${config.slideEasing}`,
-          `top ${config.slideDuration}ms ${config.slideEasing}`,
+          `transform ${config.slideDuration}ms ${config.slideEasing}`,
           `opacity ${config.outDuration}ms ${config.easing}`,
-          `transform ${config.outDuration}ms ${config.easing}`,
         ].join(", "),
-        willChange: "left, top, opacity, transform",
+        willChange: "transform, opacity",
         zIndex: "1",
         filter: "drop-shadow(0 12px 20px rgb(23 26 29 / 0.15))",
         contain: "layout style paint",
@@ -232,10 +237,12 @@ export function PixelatedImageTrail({
         activeImagesRef.current.shift()?.remove();
       }
 
+      const slideX = targetX - startX;
+      const slideY = targetY - startY;
+
       requestAnimationFrame(() => {
         if (imageElement.parentElement !== container) return;
-        imageElement.style.left = `${targetX}px`;
-        imageElement.style.top = `${targetY}px`;
+        imageElement.style.transform = `translate3d(${slideX}px, ${slideY}px, 0) scale(1)`;
         layers.forEach((layer, index) => {
           const sliceSize = 100 / safeSlices;
           layer.style.clipPath = `polygon(0% ${index * sliceSize}%, 100% ${index * sliceSize}%, 100% ${(index + 1) * sliceSize}%, 0% ${(index + 1) * sliceSize}%)`;
@@ -243,8 +250,16 @@ export function PixelatedImageTrail({
       });
 
       schedule(() => {
+        // The transition is retimed first: the slide owns `transform` for
+        // 1.3s, the exit needs it for `outDuration`. The translation is kept
+        // so the image shrinks where it came to rest rather than sliding back
+        // to where it was born.
+        imageElement.style.transition = [
+          `transform ${config.outDuration}ms ${config.easing}`,
+          `opacity ${config.outDuration}ms ${config.easing}`,
+        ].join(", ");
         imageElement.style.opacity = "0";
-        imageElement.style.transform = "translate3d(0, 0, 0) scale(0.24)";
+        imageElement.style.transform = `translate3d(${slideX}px, ${slideY}px, 0) scale(0.24)`;
         layers.forEach((layer, index) => {
           const sliceSize = 100 / safeSlices;
           layer.style.transition = `clip-path ${config.outDuration}ms ${config.easing}`;

@@ -3,6 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import { useReducedMotion } from "framer-motion";
+import { useIsOffScreen } from "@/hooks/useIsOffScreen";
 import { cn } from "@/lib/utils";
 
 export interface CarouselImage {
@@ -83,6 +84,30 @@ export const CylinderCarousel = React.forwardRef<
     // cylinder to a near-standstill keeps the composition intact while removing
     // the movement.
     const prefersReducedMotion = useReducedMotion();
+
+    /**
+     * The rotation is paused whenever the cylinder is off screen.
+     *
+     * Without this it keeps turning for as long as the page is open. The
+     * homepage is around 5,000px tall, so a reader at the footer was still
+     * paying for a 3D transform across fourteen perspective-scaled cards on
+     * every frame — one of them measured at 585,000px2 — while the browser was
+     * also trying to service their scrolling. macOS absorbs that; Windows,
+     * where Chrome reaches the GPU through ANGLE and Direct3D and a large layer
+     * means a real memory copy, does not, and the frames it drops are scroll
+     * frames.
+     *
+     * `animation-play-state` rather than removing the animation: a paused
+     * animation holds its current angle, so scrolling back up resumes from
+     * where the cylinder was instead of snapping to 0deg. Nothing is visible
+     * either way, which is the point — this costs nothing on screen.
+     *
+     * `useIsOffScreen`, not framer-motion's `useInView`, because the default
+     * has to be "running". See the note in that hook.
+     */
+    const spinRef = React.useRef<HTMLDivElement>(null);
+    const offScreen = useIsOffScreen(spinRef);
+
     const onScreenAtRest = React.useMemo(
       () => frontFacingIndices(images.length),
       [images.length]
@@ -119,6 +144,7 @@ export const CylinderCarousel = React.forwardRef<
         {...props}
       >
         <div
+          ref={spinRef}
           className={cn(
             "grid place-items-center [transform-style:preserve-3d]",
             containerClassName
@@ -128,6 +154,7 @@ export const CylinderCarousel = React.forwardRef<
             animation: prefersReducedMotion
               ? undefined
               : "iwm-cylinder-spin var(--anim-dur) linear infinite",
+            animationPlayState: offScreen ? "paused" : undefined,
           }}
         >
           {images.map((img, i) => (

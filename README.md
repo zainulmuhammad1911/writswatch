@@ -966,6 +966,83 @@ instead of a bare white pill.
 The remaining ~250 KB is React, the Next runtime and framer-motion, which
 drives reveals, the header and both carousels.
 
+### Scroll performance, and why it was fine on a Mac
+
+The site loaded fast everywhere and scrolled badly on Windows. Lighthouse said
+nothing about it, because the score measures loading and this is a compositing
+problem: the work happens on frames the user is scrolling through, long after
+the page is interactive.
+
+Two causes, both of them free on Apple silicon and expensive elsewhere. macOS
+reaches the GPU through Metal over unified memory, so a large layer costs
+nothing to hand over. Chrome on Windows goes through ANGLE to Direct3D, where a
+large layer is a real memory copy, and on integrated graphics the frames it
+drops are the scroll frames.
+
+**Nothing paused when it left the screen.** Both hero animations are
+`infinite`, and they ran for as long as the page was open. Measured on a
+1280x720 viewport:
+
+| Animation | Element | Notes |
+|---|---|---|
+| `iwm-grid-drift` | 2225 x 661 = **1,470,262 px²** | `preserve-3d`, plus `scale(2)`, so it rasterises at roughly four times that, and holds 1,600 tile divs that each own a colour transition |
+| `iwm-cylinder-spin` | 14 children in 3D | one of them the near-camera card measured at **585,336 px²** |
+
+The homepage is about 5,000px tall. A reader at the footer was still paying for
+both, every frame, while scrolling. `useIsOffScreen` now pauses them with
+`animation-play-state`, which holds the current angle so coming back up resumes
+rather than snapping to 0deg. Nobody can see a paused animation that is off
+screen, so this costs nothing visually.
+
+**The direction of that hook's default matters more than the hook.**
+framer-motion's `useInView` starts `false` and turns `true` once the observer
+reports — pause first, run later. That freezes the hero whenever the observer
+never speaks: JavaScript disabled, a hydration failure, or the Claude Code
+preview pane, which reports `visibilityState: "hidden"` and fires no
+IntersectionObserver at all. The first attempt here used `useInView` and the
+animations were `paused` forever in the pane, which is how the flaw surfaced.
+`useIsOffScreen` reports off-screen only as a positive observation, so the CSS
+default of running survives every one of those cases. Verified: in the pane,
+with `IntersectionObserver` provably not firing, both animations still report
+`running`.
+
+**A viewport-wide `backdrop-filter` on the fixed header.** It carried
+`backdrop-blur-md` once scrolled, with `backdrop-filter` in the transition list
+as well, so the compositor re-read the strip of page behind the bar and blurred
+it again on every scroll frame — and recomputed the blur repeatedly while the
+transition ran. The background is 90% opaque, so the blur was only smearing the
+remaining 10%. It is gone, and the transition is narrowed to
+`background-color,border-color`. The nav pill keeps its own `backdrop-blur-sm`:
+a few hundred pixels wide rather than viewport-wide, over a lighter 80%
+background, so it earns what the bar did not.
+
+Two smaller things went with it. `PixelatedImageTrail` transitioned `left` and
+`top` for a 1.3s slide, with `will-change: left, top` — layout properties, so
+layout and paint ran every frame for up to fourteen live trail elements. It
+animates `transform` now, which stays on the compositor; `left`/`top` place the
+element once and never change. And `PerspectiveCarousel` had a permanent
+`will-change-transform` on every slide, which is the one thing `will-change`
+should never be, since framer-motion promotes the element while it animates and
+releases it afterwards.
+
+`PerspectiveCarousel`'s `filter: blur(2px)` on inactive captions was left
+alone. It has no autoplay, so it never runs while scrolling, and it is a small
+text node — the cost is real but it is not this bug, and the focus-pull is
+deliberate.
+
+What was not verified here: that the pause engages on scroll. The preview pane
+fires no IntersectionObserver, so the only way to see it is a real browser. In
+DevTools on the machine that was janky:
+
+```js
+const el = [...document.querySelectorAll('*')]
+  .find(e => getComputedStyle(e).animationName === 'iwm-grid-drift');
+setInterval(() => console.log(Math.round(scrollY),
+  getComputedStyle(el).animationPlayState), 500);
+```
+
+Scroll past the hero and it should read `paused`.
+
 ### HTML and headers
 
 Documents are 14–21 KB gzipped. One stylesheet (12 KB gzipped), three font

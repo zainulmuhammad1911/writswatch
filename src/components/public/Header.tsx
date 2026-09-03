@@ -355,10 +355,28 @@ export function Header({
 
   return (
     <header
+      /**
+       * No backdrop-filter here, deliberately.
+       *
+       * This used to carry `backdrop-blur-md` once scrolled, and
+       * `backdrop-filter` sat in the transition list as well. A `fixed`
+       * element spanning the viewport means the compositor re-reads the strip
+       * of page behind the bar and blurs it again on every scroll frame, and
+       * transitioning the filter makes it recompute the blur repeatedly while
+       * the transition runs. It is close to free on Apple silicon and expensive
+       * on Windows, where Chrome reaches the GPU through ANGLE and Direct3D.
+       *
+       * The background is 90% opaque, so the blur was only ever smearing the
+       * remaining 10%. Dropping it costs almost nothing to look at and removes
+       * a per-frame cost from every scroll on the site. The nav pill keeps its
+       * own `backdrop-blur-sm`: that one is a few hundred pixels wide rather
+       * than viewport-wide, and its background is lighter at 80%, so it earns
+       * the blur where this did not.
+       */
       className={cn(
-        "fixed inset-x-0 top-0 z-50 transition-[background-color,border-color,backdrop-filter] duration-base ease-out-museum",
+        "fixed inset-x-0 top-0 z-50 transition-[background-color,border-color] duration-base ease-out-museum",
         solid
-          ? "border-b border-border-grey bg-cool-white/90 backdrop-blur-md"
+          ? "border-b border-border-grey bg-cool-white/90"
           : "border-b border-transparent bg-transparent",
         className
       )}

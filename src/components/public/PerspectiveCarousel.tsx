@@ -141,8 +141,17 @@ export function PerspectiveCarousel({
                 style={{ width: safeSlideWidth, perspective: "1200px" }}
               >
                 <motion.div
+                  /**
+                   * No `will-change-transform` class. It was permanent, which
+                   * is the one thing will-change should never be: it holds a
+                   * composited layer per slide for the life of the page, and
+                   * framer-motion already promotes the element while it is
+                   * animating and lets it go afterwards. Static promotion only
+                   * spends GPU memory, which is scarcest on exactly the
+                   * low-end hardware this pass is meant to help.
+                   */
                   className={cn(
-                    "flex w-full flex-col items-center gap-3 will-change-transform",
+                    "flex w-full flex-col items-center gap-3",
                     slideClassName
                   )}
                   animate={{

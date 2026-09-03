@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo, useSyncExternalStore } from "react";
+import React, { useMemo, useRef, useSyncExternalStore } from "react";
 import { useReducedMotion } from "framer-motion";
+import { useIsOffScreen } from "@/hooks/useIsOffScreen";
 import { cn } from "@/lib/utils";
 
 /** The grid never changes after hydration, so there is nothing to subscribe to. */
@@ -35,6 +36,22 @@ export function PerspectiveGrid({
   const prefersReducedMotion = useReducedMotion();
   const drift = animated && !prefersReducedMotion;
 
+  /**
+   * The drift is paused whenever the grid is off screen. See the longer note in
+   * CylinderCarousel; the same reasoning applies, and the numbers here are
+   * worse. This element measures 2225 x 661 on a desktop viewport, carries
+   * `scale(2)` so it rasterises at roughly four times that, sits under
+   * `transform-style: preserve-3d`, and holds 1,600 tile divs that each own a
+   * colour transition. Animating a 3D transform on that for the entire visit,
+   * long after the hero has scrolled away, was the larger half of the jank
+   * reported on Windows.
+   *
+   * `useIsOffScreen`, not framer-motion's `useInView`, because the default has
+   * to be "running". See the note in that hook.
+   */
+  const gridRef = useRef<HTMLDivElement>(null);
+  const offScreen = useIsOffScreen(gridRef);
+
   const tiles = useMemo(
     () => Array.from({ length: gridSize * gridSize }),
     [gridSize]
@@ -47,6 +64,7 @@ export function PerspectiveGrid({
         "relative h-full w-full overflow-hidden bg-cool-white",
         className
       )}
+      ref={gridRef}
       style={{
         perspective: "2000px",
         transformStyle: "preserve-3d",
@@ -67,6 +85,7 @@ export function PerspectiveGrid({
           animation: drift
             ? "iwm-grid-drift 32s ease-in-out infinite"
             : undefined,
+          animationPlayState: offScreen ? "paused" : undefined,
         }}
       >
         {mounted &&
