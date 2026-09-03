@@ -1033,6 +1033,40 @@ alone. It has no autoplay, so it never runs while scrolling, and it is a small
 text node — the cost is real but it is not this bug, and the focus-pull is
 deliberate.
 
+A second pass, after the first one helped but did not finish the job.
+
+**The carousel's edge fade was a `mask-image`** on a container measuring
+around 1.5 million pixels and holding the animating 3D cylinder. A mask makes
+the browser render that whole subtree to a texture and composite it through an
+alpha channel again on every frame the content changes, which is exactly the
+fast path a 3D transform would otherwise take. It is two painted gradient
+rectangles now. The only visible difference is the outer 4% on each side: a
+mask left those strips transparent so the hero grid showed through, and the
+overlays cover them in the page background instead — a region PerspectiveGrid
+has already faded most of the way to cool-white with its own radial overlay.
+
+**The grid's 1,600 tiles exist only to catch a cursor.** They are divs inside
+an element carrying `preserve-3d`, `scale(2)` and an infinite 3D animation, and
+a device with no cursor can never fire the hover they are there for. The lines
+they used to draw with their borders are a two-layer background gradient now,
+one paint for the whole grid, so the tiles are rendered only where
+`(hover: hover) and (pointer: fine)` matches. A phone gets the same grid with
+1,600 fewer nodes and no border paints; a desktop keeps the trail. Verified:
+`background-size` computes to `2.5% 2.5%` for `gridSize` 40, and the tile count
+is 1,600 on a mouse-driven machine and 0 without.
+
+Two things that looked like findings and were not, both measured rather than
+assumed. Every element on the page reports `transition-property: all` — that is
+the CSS initial value, and all of them have `transition-duration: 0s`, so
+nothing transitions. And the five `Reveal` wrappers animate only `opacity` and
+`y`, both of which stay on the compositor.
+
+What this pass does not fix: on a desktop with a mouse the 1,600 tiles are
+still there. If scrolling is still not smooth, that is the next lever, and it
+costs something visible — either fewer tiles, or a single cursor-following
+element in place of 1,600 hoverable ones, which changes the trail from
+tile-snapped to smooth.
+
 What was not verified here: that the pause engages on scroll. The preview pane
 fires no IntersectionObserver, so the only way to see it is a real browser. In
 DevTools on the machine that was janky:

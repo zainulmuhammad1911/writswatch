@@ -127,20 +127,33 @@ export const CylinderCarousel = React.forwardRef<
     // The cylinder's radius is derived from the card width, the gap and the
     // angle between cards, so adding images widens it on its own: more cards
     // means a smaller angle, which means a bigger circle.
-    const mask = `linear-gradient(90deg, transparent, #000 ${fadeInset}% ${100 - fadeInset}%, transparent)`;
+    /**
+     * The edges fade with two painted gradients, not with `mask-image`.
+     *
+     * The mask used to sit on this container, which measures around 1.5
+     * million pixels and holds an animating 3D scene. A mask makes the browser
+     * render that whole subtree to a texture and composite it through an alpha
+     * channel again for every frame the content changes, which defeats the
+     * fast path the 3D transform would otherwise take. Two gradient rectangles
+     * painted on top are just paint, and they do not touch the subtree.
+     *
+     * The visible difference is confined to the outer `fadeInset`% on each
+     * side. A mask left those strips transparent, so the hero grid showed
+     * through; these overlays cover them in the page's own background instead.
+     * That region is already most of the way to cool-white, because
+     * PerspectiveGrid fades itself out with a radial overlay well before the
+     * viewport edge.
+     */
+    const fadeWidth = `${fadeInset}%`;
 
     return (
       <div
         ref={ref}
         className={cn(
-          "grid h-full min-h-[500px] w-full place-items-center overflow-hidden",
+          "relative grid h-full min-h-[500px] w-full place-items-center overflow-hidden",
           className
         )}
-        style={{
-          perspective: "70em",
-          maskImage: mask,
-          WebkitMaskImage: mask,
-        }}
+        style={{ perspective: "70em" }}
         {...props}
       >
         <div
@@ -203,6 +216,26 @@ export const CylinderCarousel = React.forwardRef<
             />
           ))}
         </div>
+
+        {/* See the note on fadeWidth above. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 z-10"
+          style={{
+            width: fadeWidth,
+            background:
+              "linear-gradient(90deg, var(--color-cool-white), transparent)",
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 z-10"
+          style={{
+            width: fadeWidth,
+            background:
+              "linear-gradient(270deg, var(--color-cool-white), transparent)",
+          }}
+        />
       </div>
     );
   }

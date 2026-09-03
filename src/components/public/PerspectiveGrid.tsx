@@ -5,6 +5,8 @@ import { useReducedMotion } from "framer-motion";
 import { useIsOffScreen } from "@/hooks/useIsOffScreen";
 import { cn } from "@/lib/utils";
 
+const FINE_POINTER = "(hover: hover) and (pointer: fine)";
+
 /** The grid never changes after hydration, so there is nothing to subscribe to. */
 const subscribeToNothing = () => () => {};
 
@@ -52,10 +54,42 @@ export function PerspectiveGrid({
   const gridRef = useRef<HTMLDivElement>(null);
   const offScreen = useIsOffScreen(gridRef);
 
+  /**
+   * The tiles only exist to catch a cursor.
+   *
+   * gridSize is 40, so they are 1,600 divs living inside an element that
+   * carries `preserve-3d`, `scale(2)` and an infinite 3D animation. A device
+   * with no cursor can never trigger the hover they exist for, so on a phone
+   * or tablet all 1,600 were pure cost. They are rendered only where a fine
+   * pointer is reported now, and the lines themselves moved to a background
+   * gradient below, so the grid looks identical either way.
+   */
+  const finePointer = useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(FINE_POINTER);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(FINE_POINTER).matches,
+    () => false
+  );
+
   const tiles = useMemo(
     () => Array.from({ length: gridSize * gridSize }),
     [gridSize]
   );
+
+  // One paint for every line, instead of 1,600 elements each drawing its own
+  // border. A 1px line at the start of each cell on both axes, which also
+  // means single lines between cells rather than the doubled 2px the adjacent
+  // borders used to produce.
+  const lines = {
+    backgroundImage: [
+      "linear-gradient(to right, var(--color-border-grey) 1px, transparent 1px)",
+      "linear-gradient(to bottom, var(--color-border-grey) 1px, transparent 1px)",
+    ].join(", "),
+    backgroundSize: `${100 / gridSize}% ${100 / gridSize}%`,
+  } satisfies React.CSSProperties;
 
   return (
     <div
@@ -86,16 +120,19 @@ export function PerspectiveGrid({
             ? "iwm-grid-drift 32s ease-in-out infinite"
             : undefined,
           animationPlayState: offScreen ? "paused" : undefined,
+          ...lines,
         }}
       >
         {mounted &&
+          finePointer &&
           tiles.map((_, i) => (
             // A tile lights up the instant the cursor touches it, then takes
             // 1.5s to fade back. Moving across the grid therefore leaves a
             // trail that dissolves behind the pointer.
             <div
               key={i}
-              className="min-h-px min-w-px border border-border-grey bg-transparent transition-colors duration-[1500ms] hover:bg-navy/12 hover:duration-0"
+              // No border: the lines come from the background gradient now.
+              className="min-h-px min-w-px bg-transparent transition-colors duration-[1500ms] hover:bg-navy/12 hover:duration-0"
             />
           ))}
       </div>
